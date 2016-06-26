@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+#
+# vim: set ft=sh:
+#
+# @description push to packagecloud
+# @import console/die
+# @import array/join
+# @dependency package_cloud
+# @dependency rpmsign
+
+main ()
+{
+    verbose true
+    strict true
+
+    local files=()
+
+    [[ -f "${HOME}/.rpmmacros" ]] || _ die "${HOME}/.rpmmacros: No such file or directory"
+
+    while read -d '' -r dir
+    do
+        sudo chown "${USER}:${GROUP}" "${dir}" >& /dev/null || true
+    done < <(find "${MANAGE_REPOSITORY}/SRPMS" "${MANAGE_REPOSITORY}/RPMS" -type d -print0 2> /dev/null)
+
+    while read -d '' -r file
+    do
+        if [[ "${file##*.}" == "rpm" ]]
+        then
+            files+=("${file}")
+            sudo chown "${USER}:${GROUP}" "${file}" >& /dev/null || true
+        fi
+    done < <(find "${MANAGE_REPOSITORY}/SRPMS" "${MANAGE_REPOSITORY}/RPMS" -type f -print0 2> /dev/null)
+
+    rpm --delsign "${files[@]}" >& /dev/null || _ die "Failed to delete signature"
+    rpm --addsign "${files[@]}"
+
+    package_cloud push escapace/stack/el/7 "${files[@]}"
+}
