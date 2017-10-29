@@ -31,8 +31,8 @@ main ()
         fi
     done < <(find "${MANAGE_REPOSITORY}/SRPMS" "${MANAGE_REPOSITORY}/RPMS" -type f -print0 2> /dev/null)
 
-    rpm --delsign "${files[@]}" >& /dev/null || _ die "Failed to delete signature"
-    rpm --addsign "${files[@]}"
+    rpmsign --delsign "${files[@]}" >& /dev/null || _ die "Failed to delete signature"
+    rpmsign --addsign --key-id 0xF29CCEBC83FD4525 "${files[@]}"
 
     package_cloud push escapace/stack/el/7 "${files[@]}"
 }
