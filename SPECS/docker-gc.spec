@@ -1,19 +1,26 @@
-%global _sourcedir %{_topdir}/SOURCES/docker-gc
-
 Name: docker-gc
-Version: 0.1.0
+Version: 0.1.1
 Release: 1%{?dist}
 Summary: Docker garbage collection of containers and images.
 BuildArch: noarch
-
+Requires: bash
 License: Apache
+Source0: https://github.com/spotify/docker-gc/archive/master.tar.gz
 
 %description
 Docker garbage collection of containers and images.
 
+%prep
+%setup -q -n docker-gc-master
+
+%build
+
 %install
-mkdir -p $RPM_BUILD_ROOT/usr/sbin
-install -m 775 $RPM_SOURCE_DIR/docker-gc $RPM_BUILD_ROOT/usr/sbin/docker-gc
+
+mkdir -p %{buildroot}/%{_bindir}
+
+install -m 0755 %{name} %{buildroot}/%{_bindir}/%{name}
 
 %files
-/usr/sbin/docker-gc
+%license LICENSE
+%{_bindir}/%{name}

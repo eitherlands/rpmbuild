@@ -1,100 +1,229 @@
-%global _sourcedir %{_topdir}/SOURCES/git
-
 # Pass --without docs to rpmbuild if you don't want the documentation
+%bcond_without docs
 
-%global gitcoredir          %{_libexecdir}/git-core
-%global use_prebuilt_docs   0
+%global gitexecdir          %{_libexecdir}/git-core
 
-# Settings for F-19+ and EL-7+
+# Settings for Fedora > 29 and EL > 7
+%if 0%{?fedora} > 29 || 0%{?rhel} > 7
+%bcond_with                 python2
+%else
+%bcond_without              python2
+%endif
+
+# Settings for Fedora >= 29 and EL > 7
+%if 0%{?fedora} >= 29 || 0%{?rhel} > 7
+%global gitweb_httpd_conf   gitweb.conf
+%else
+%global gitweb_httpd_conf   git.conf
+%endif
+
+# Settings for Fedora and EL > 7
+%if 0%{?fedora} || 0%{?rhel} > 7
+%bcond_without              python3
+# linkchcker is not available on EL <= 7
+%bcond_without              linkcheck
+%global use_perl_generators 1
+%global use_perl_interpreter 1
+%else
+%bcond_with                 python3
+%bcond_with                 linkcheck
+%global use_perl_generators 0
+%global use_perl_interpreter 0
+%endif
+
+# Settings for Fedora and EL >= 7
 %if 0%{?fedora} || 0%{?rhel} >= 7
 %global bashcomp_pkgconfig  1
-%global bashcompdir %(pkg-config --variable=completionsdir bash-completion 2>/dev/null)
-%global bashcomproot %(dirname %{bashcompdir} 2>/dev/null)
+%global bashcompdir         %(pkg-config --variable=completionsdir bash-completion 2>/dev/null)
+%global bashcomproot        %(dirname %{bashcompdir} 2>/dev/null)
+%global emacs_filesystem    1
 %global libsecret           1
 %global use_new_rpm_filters 1
 %global use_systemd         1
 %else
 %global bashcomp_pkgconfig  0
-%global bashcompdir %{_sysconfdir}/bash_completion.d
-%global bashcomproot %{bashcompdir}
+%global bashcompdir         %{_sysconfdir}/bash_completion.d
+%global bashcomproot        %{bashcompdir}
+%global emacs_filesystem    0
 %global libsecret           0
 %global use_new_rpm_filters 0
 %global use_systemd         0
+%{!?_pkgdocdir: %global _pkgdocdir %{_docdir}/%{name}-%{version}}
 %endif
 
-# Settings for EL <= 7
-%if 0%{?rhel} && 0%{?rhel} <= 7
-%{!?__global_ldflags: %global __global_ldflags -Wl,-z,relro}
+# Allow cvs subpackage to be toggled via --with/--without
+# Disable cvs subpackage by default on EL > 7
+%if 0%{?rhel} > 7
+%bcond_with                 cvs
+%else
+%bcond_without              cvs
 %endif
 
-%global ius_suffix
+# Allow p4 subpackage to be toggled via --with/--without
+# Disable by default if we lack python2 support
+%if ! %{with python2}
+%bcond_with                 p4
+%else
+%bcond_without              p4
+%endif
 
-Name:           git%{?ius_suffix}
-Version:        2.14.1
-Release:        1.ius%{?dist}
+# Hardening flags for EL-7
+%if 0%{?rhel} == 7
+%global _hardened_build     1
+%endif
+
+# Hardening flags for EL-6
+%if 0%{?rhel} == 6
+%global optflags            %{optflags} -fPIC -pie
+%global __global_ldflags    -Wl,-z,relro -Wl,-z,now
+%endif
+
+# Define for release candidates
+%global rcrev   .rc1
+
+Name:           git
+Version:        2.18.0
+Release:        0.1%{?rcrev}%{?dist}
 Summary:        Fast Version Control System
 License:        GPLv2
-Group:          Development/Tools
-URL:            https://git-scm.com
-Source0:        https://www.kernel.org/pub/software/scm/git/git-%{version}.tar.xz
+URL:            https://git-scm.com/
+Source0:        https://www.kernel.org/pub/software/scm/git/%{?rcrev:testing/}%{name}-%{version}%{?rcrev}.tar.xz
+Source1:        https://www.kernel.org/pub/software/scm/git/%{?rcrev:testing/}%{name}-%{version}%{?rcrev}.tar.sign
+
+# Junio C Hamano's key is used to sign git releases, it can be found in the
+# junio-gpg-pub tag within git.
+#
+# (Note that the tagged blob in git contains a version of the key with an
+# expired signing subkey.  The subkey expiration has been extended on the
+# public keyservers, but the blob in git has not been updated.)
+#
+# https://git.kernel.org/cgit/git/git.git/tag/?h=junio-gpg-pub
+# https://git.kernel.org/cgit/git/git.git/blob/?h=junio-gpg-pub&id=7214aea37915ee2c4f6369eb9dea520aec7d855b
+Source9:        gpgkey-junio.asc
 
 # Local sources begin at 10 to allow for additional future upstream sources
-Source10:       git-init.el
 Source11:       git.xinetd.in
-Source12:       git.conf.httpd
-Source13:       git-gui.desktop
+Source12:       git-gui.desktop
+Source13:       gitweb-httpd.conf
 Source14:       gitweb.conf.in
-Source15:       git@.service
+Source15:       git@.service.in
 Source16:       git.socket
+
+# https://bugzilla.redhat.com/1582555
+# https://public-inbox.org/git/20180525231713.23047-1-lintonrjeremy@gmail.com/
+# This patch is applied manually on aarch64 only, until it is accepted # upstream
+Source20:       0001-packfile-Correct-zlib-buffer-handling.patch
+
+# Script to print test failure output (used in %%check)
+Source99:       print-failed-test-output
+
 Patch0:         git-1.8-gitweb-home-link.patch
 # https://bugzilla.redhat.com/490602
 Patch1:         git-cvsimport-Ignore-cvsps-2.2b1-Branches-output.patch
+# https://github.com/gitster/git/commit/f2cb01d35
+# https://public-inbox.org/git/20180601174644.13055-1-phillip.wood@talktalk.net/
+Patch2:         0001-add-p-fix-counting-empty-context-lines-in-edited-pat.patch
 
-%if ! 0%{?_without_docs}
+%if %{with docs}
 BuildRequires:  asciidoc >= 8.4.1
 BuildRequires:  xmlto
+%if %{with linkcheck}
+BuildRequires:  linkchecker
+%endif
 %endif
 BuildRequires:  desktop-file-utils
 BuildRequires:  emacs
 BuildRequires:  expat-devel
+BuildRequires:  findutils
+BuildRequires:  gawk
+BuildRequires:  gcc
 BuildRequires:  gettext
+BuildRequires:  gnupg2
 BuildRequires:  libcurl-devel
 %if %{libsecret}
 BuildRequires:  libsecret-devel
 %endif
-BuildRequires:  pcre-devel
-BuildRequires:  perl(Test)
+BuildRequires:  make
 BuildRequires:  openssl-devel
-BuildRequires:  zlib-devel >= 1.2
+BuildRequires:  pcre2-devel
+BuildRequires:  perl(Error)
+BuildRequires:  perl(Test)
+%if %{use_perl_generators}
+BuildRequires:  perl-generators
+%endif
+%if %{use_perl_interpreter}
+BuildRequires:  perl-interpreter
+%else
+BuildRequires:  perl
+%endif
 %if %{bashcomp_pkgconfig}
 BuildRequires:  pkgconfig(bash-completion)
 %endif
+BuildRequires:  sed
 %if %{use_systemd}
 # For macros
 BuildRequires:  systemd
 %endif
+BuildRequires:  tcl
+BuildRequires:  tk
+BuildRequires:  zlib-devel >= 1.2
 
-Requires:       %{name}-core = %{version}-%{release}
-Requires:       %{name}-core-doc = %{version}-%{release}
-Requires:       perl(Error)
+# Test suite requirements
+BuildRequires:  acl
+%if 0%{?fedora} && 0%{?fedora} >= 27
+# Needed by t5540-http-push-webdav.sh
+BuildRequires: apr-util-bdb
+%endif
+BuildRequires:  bash
+%if %{with cvs}
+BuildRequires:  cvs
+BuildRequires:  cvsps
+%endif
+BuildRequires:  gnupg
+%if 0%{?fedora} || ( 0%{?rhel} && ( 0%{?rhel} == 6 || 0%{?rhel} >= 7 && %{_arch} != ppc64 ))
+BuildRequires:  highlight
+%endif
+BuildRequires:  httpd
+%if 0%{?fedora} && %{_arch} != s390x
+BuildRequires:  jgit
+%endif
+BuildRequires:  mod_dav_svn
+BuildRequires:  pcre
+BuildRequires:  perl(App::Prove)
+BuildRequires:  perl(CGI)
+BuildRequires:  perl(CGI::Carp)
+BuildRequires:  perl(CGI::Util)
+BuildRequires:  perl(DBD::SQLite)
+BuildRequires:  perl(Digest::MD5)
+BuildRequires:  perl(HTTP::Date)
+BuildRequires:  perl(IO::Pty)
+BuildRequires:  perl(Mail::Address)
+BuildRequires:  perl(Memoize)
+BuildRequires:  perl(Test::More)
+BuildRequires:  perl(Time::HiRes)
+%if %{with python2}
+BuildRequires:  python2-devel
+%endif
+%if %{with python3}
+BuildRequires:  python3-devel
+%endif
+BuildRequires:  subversion
+BuildRequires:  subversion-perl
+BuildRequires:  time
+
+Requires:       git-core = %{version}-%{release}
+Requires:       git-core-doc = %{version}-%{release}
 %if ! %{defined perl_bootstrap}
 Requires:       perl(Term::ReadKey)
 %endif
-Requires:       %{name}-perl-Git = %{version}-%{release}
+Requires:       perl-Git = %{version}-%{release}
 
-Provides:       git = %{version}-%{release}
-Provides:       git%{?_isa} = %{version}-%{release}
-Conflicts:      git < %{version}
+%if %{emacs_filesystem}
+Requires:       emacs-filesystem >= %{_emacs_version}
+%endif
 
-# The bzr and hg remote helper scripts have been effectively removed from the
-# upstream source and are now maintained independently.
-#
-# https://github.com/git/git/blob/v2.7.0/contrib/remote-helpers/git-remote-bzr
-# https://github.com/git/git/blob/v2.7.0/contrib/remote-helpers/git-remote-hg
-#
-# Obsolete them here to provide a clean upgrade path.
-Obsoletes:      %{name}-bzr <= 2.6.4-2.ius
-Obsoletes:      %{name}-hg <= 2.6.4-2.ius
+# Obsolete gnome-keyring credential helper (remove in Fedora 29)
+Obsoletes:      git-gnome-keyring < 2.11.1-4
 
 %description
 Git is a fast, scalable, distributed revision control system with an
@@ -107,23 +236,26 @@ tools for integrating with other SCMs, install the git-all meta-package.
 
 %package all
 Summary:        Meta-package to pull in all git tools
-Group:          Development/Tools
 BuildArch:      noarch
-Requires:       %{name} = %{version}-%{release}
-Requires:       %{name}-cvs = %{version}-%{release}
-Requires:       %{name}-email = %{version}-%{release}
-Requires:       %{name}-gui = %{version}-%{release}
-Requires:       %{name}-svn = %{version}-%{release}
-Requires:       %{name}-p4 = %{version}-%{release}
-Requires:       %{name}-gitk = %{version}-%{release}
-Requires:       %{name}-perl-Git = %{version}-%{release}
+Requires:       git = %{version}-%{release}
+%if %{with cvs}
+Requires:       git-cvs = %{version}-%{release}
+%endif
+Requires:       git-email = %{version}-%{release}
+Requires:       git-gui = %{version}-%{release}
+%if %{with p4}
+Requires:       git-p4 = %{version}-%{release}
+%endif
+Requires:       git-subtree = %{version}-%{release}
+Requires:       git-svn = %{version}-%{release}
+Requires:       gitk = %{version}-%{release}
+Requires:       perl-Git = %{version}-%{release}
 %if ! %{defined perl_bootstrap}
 Requires:       perl(Term::ReadKey)
 %endif
-Requires:       emacs-%{name} = %{version}-%{release}
-Provides:       git-all = %{version}-%{release} 
-Conflicts:      git-all < %{version}
-
+%if ! %{emacs_filesystem}
+Requires:       emacs-git = %{version}-%{release}
+%endif
 %description all
 Git is a fast, scalable, distributed revision control system with an
 unusually rich command set that provides both high-level operations
@@ -133,14 +265,9 @@ This is a dummy package which brings in all subpackages.
 
 %package core
 Summary:        Core package of git with minimal functionality
-Group:          Development/Tools
 Requires:       less
 Requires:       openssh-clients
 Requires:       zlib >= 1.2
-Provides:       git-core = %{version}-%{release}
-Provides:       git-core%{?_isa} = %{version}-%{release}
-Conflicts:      git-core < %{version}
-
 %description core
 Git is a fast, scalable, distributed revision control system with an
 unusually rich command set that provides both high-level operations
@@ -153,192 +280,164 @@ other SCMs, install the git-all meta-package.
 
 %package core-doc
 Summary:        Documentation files for git-core
-Group:          Development/Tools
-Requires:       %{name}-core = %{version}-%{release}
-Provides:       git-core-doc = %{version}-%{release}
-Conflicts:      git-core-doc < %{version}
-
+BuildArch:      noarch
+Requires:       git-core = %{version}-%{release}
 %description core-doc
 Documentation files for git-core package including man pages.
 
+%if %{with cvs}
+%package cvs
+Summary:        Git tools for importing CVS repositories
+BuildArch:      noarch
+Requires:       git = %{version}-%{release}
+Requires:       cvs
+Requires:       cvsps
+Requires:       perl(DBD::SQLite)
+%description cvs
+%{summary}.
+%endif
+
 %package daemon
 Summary:        Git protocol daemon
-Group:          Development/Tools
-Requires:       %{name} = %{version}-%{release}
+Requires:       git-core = %{version}-%{release}
 %if %{use_systemd}
 Requires:       systemd
 Requires(post): systemd
-Requires(preun): systemd
+Requires(preun):  systemd
 Requires(postun): systemd
 %else
 Requires:       xinetd
 %endif
-Provides:       git-daemon = %{version}-%{release}
-Provides:       git-daemon%{?_isa} = %{version}-%{release}
-Conflicts:      git-daemon < %{version}
-
 %description daemon
 The git daemon for supporting git:// access to git repositories
 
-%package gitweb
-Summary:        Simple web interface to git repositories
-Group:          Development/Tools
+%package email
+Summary:        Git tools for sending patches via email
 BuildArch:      noarch
-Requires:       %{name} = %{version}-%{release}
-Provides:       gitweb = %{version}-%{release}
-Conflicts:      gitweb < %{version}
-# rename from gitweb2u to git2u-gitweb
-Provides:       gitweb%{?ius_suffix} = %{version}-%{release}
-Obsoletes:      gitweb%{?ius_suffix} <= 2.6.4-2.ius
-
-%description gitweb
-Simple web interface to track changes in git repositories
-
-%package p4
-Summary:        Git tools for working with Perforce depots
-Group:          Development/Tools
-BuildArch:      noarch
-BuildRequires:  python
-Requires:       %{name} = %{version}-%{release}
-Provides:       git-p4 = %{version}-%{release}
-Conflicts:      git-p4 < %{version}
-
-%description p4
+Requires:       git = %{version}-%{release}
+Requires:       perl(Authen::SASL)
+Requires:       perl(Net::SMTP::SSL)
+%description email
 %{summary}.
 
+%if ! %{emacs_filesystem}
+%package -n emacs-git
+Summary:        Git version control system support for Emacs
+Requires:       git = %{version}-%{release}
+BuildArch:      noarch
+Requires:       emacs(bin) >= %{_emacs_version}
+Obsoletes:      emacs-git-el < 2.18.0-0.0
+Provides:       emacs-git-el = %{version}-%{release}
+%description -n emacs-git
+%{summary}.
+%endif
+
+%package -n gitk
+Summary:        Git repository browser
+BuildArch:      noarch
+Requires:       git = %{version}-%{release}
+Requires:       tk >= 8.4
+%description -n gitk
+%{summary}.
+
+%package -n gitweb
+Summary:        Simple web interface to git repositories
+BuildArch:      noarch
+Requires:       git = %{version}-%{release}
+%description -n gitweb
+%{summary}.
+
+%package gui
+Summary:        Graphical interface to Git
+BuildArch:      noarch
+Requires:       gitk = %{version}-%{release}
+Requires:       tk >= 8.4
+%description gui
+%{summary}.
+
+%if %{with p4}
+%package p4
+Summary:        Git tools for working with Perforce depots
+BuildArch:      noarch
+BuildRequires:  python2-devel
+Requires:       git = %{version}-%{release}
+%description p4
+%{summary}.
+%endif
+
+%package -n perl-Git
+Summary:        Perl interface to Git
+BuildArch:      noarch
+Requires:       git = %{version}-%{release}
+Requires:       perl(:MODULE_COMPAT_%(eval "`%{__perl} -V:version`"; echo $version))
+%description -n perl-Git
+%{summary}.
+
+%package -n perl-Git-SVN
+Summary:        Perl interface to Git::SVN
+BuildArch:      noarch
+Requires:       git = %{version}-%{release}
+Requires:       perl(:MODULE_COMPAT_%(eval "`%{__perl} -V:version`"; echo $version))
+%description -n perl-Git-SVN
+%{summary}.
+
+%package subtree
+Summary:        Git tools to merge and split repositories
+Requires:       git-core = %{version}-%{release}
+%description subtree
+Git subtrees allow subprojects to be included within a subdirectory
+of the main project, optionally including the subproject's entire
+history.
+
 %package svn
-Summary:        Git tools for importing Subversion repositories
-Group:          Development/Tools
-Requires:       %{name} = %{version}-%{release}, subversion
+Summary:        Git tools for interacting with Subversion repositories
+Requires:       git = %{version}-%{release}
 Requires:       perl(Digest::MD5)
 %if ! %{defined perl_bootstrap}
 Requires:       perl(Term::ReadKey)
 %endif
-Provides:       git-svn = %{version}-%{release}
-Provides:       git-svn%{?_isa} = %{version}-%{release}
-Conflicts:      git-svn < %{version}
-
+Requires:       subversion
 %description svn
-Git tools for importing Subversion repositories.
-
-%package cvs
-Summary:        Git tools for importing CVS repositories
-Group:          Development/Tools
-BuildArch:      noarch
-Requires:       %{name} = %{version}-%{release}, cvs
-Requires:       cvsps
-Requires:       perl(DBD::SQLite)
-Provides:       git-cvs = %{version}-%{release}
-Conflicts:      git-cvs < %{version}
-
-%description cvs
-Git tools for importing CVS repositories.
-
-%package email
-Summary:        Git tools for sending email
-Group:          Development/Tools
-BuildArch:      noarch
-Requires:       %{name} = %{version}-%{release}
-Requires:       %{name}-perl-Git = %{version}-%{release}
-Requires:       perl(Authen::SASL)
-Requires:       perl(Net::SMTP::SSL)
-Provides:       git-email = %{version}-%{release}
-Conflicts:      git-email < %{version}
-
-%description email
-Git tools for sending email.
-
-%package gui
-Summary:        Git GUI tool
-Group:          Development/Tools
-BuildArch:      noarch
-Requires:       %{name} = %{version}-%{release}, tk >= 8.4
-Requires:       %{name}-gitk = %{version}-%{release}
-Provides:       git-gui = %{version}-%{release}
-Conflicts:      git-gui < %{version}
-
-%description gui
-Git GUI tool.
-
-%package gitk
-Summary:        Git revision tree visualiser
-Group:          Development/Tools
-BuildArch:      noarch
-Requires:       %{name} = %{version}-%{release}, tk >= 8.4
-Provides:       gitk = %{version}-%{release}
-Conflicts:      gitk < %{version}
-# rename from gitk2u to git2u-gitk
-Provides:       gitk%{?ius_suffix} = %{version}-%{release}
-Obsoletes:      gitk%{?ius_suffix} <= 2.6.4-2.ius
-
-%description gitk
-Git revision tree visualiser.
-
-%package perl-Git
-Summary:        Perl interface to Git
-Group:          Development/Libraries
-BuildArch:      noarch
-Requires:       %{name} = %{version}-%{release}
-BuildRequires:  perl(Error), perl(ExtUtils::MakeMaker)
-Requires:       perl(Error)
-Requires:       perl(:MODULE_COMPAT_%(eval "`%{__perl} -V:version`"; echo $version))
-Provides:       perl-Git = %{version}-%{release}
-Conflicts:      perl-Git < %{version}
-# rename from perl-Git2u to git2u-perl-Git
-Provides:       perl-Git%{?ius_suffix} = %{version}-%{release}
-Obsoletes:      perl-Git%{?ius_suffix} <= 2.6.4-2.ius
-
-%description perl-Git
-Perl interface to Git.
-
-%package perl-Git-SVN
-Summary:        Perl interface to Git::SVN
-Group:          Development/Libraries
-BuildArch:      noarch
-Requires:       %{name} = %{version}-%{release}
-Requires:       perl(:MODULE_COMPAT_%(eval "`%{__perl} -V:version`"; echo $version))
-Provides:       perl-Git-SVN = %{version}-%{release}
-Conflicts:      perl-Git-SVN < %{version}
-# rename from perl-Git-SVN2u to perl-Git2u-SVN
-Provides:       perl-Git-SVN%{?ius_suffix} = %{version}-%{release}
-Obsoletes:      perl-Git-SVN%{?ius_suffix} <= 2.1.3-2.ius
-# rename from perl-Git2u-SVN to git2u-perl-Git-SVN
-Provides:       perl-Git%{?ius_suffix}-SVN = %{version}-%{release}
-Obsoletes:      perl-Git%{?ius_suffix}-SVN <= 2.6.4-2.ius
-
-%description perl-Git-SVN
-Perl interface to Git.
-
-%package -n emacs-%{name}
-Summary:        Git version control system support for Emacs
-Group:          Applications/Editors
-Requires:       %{name} = %{version}-%{release}
-BuildArch:      noarch
-Requires:       emacs(bin) >= %{_emacs_version}
-Provides:       emacs-git = %{version}-%{release}
-Conflicts:      emacs-git < %{version}
-
-%description -n emacs-%{name}
-%{summary}.
-
-%package -n emacs-%{name}-el
-Summary:        Elisp source files for git version control system support for Emacs
-Group:          Applications/Editors
-BuildArch:      noarch
-Requires:       emacs-%{name} = %{version}-%{release}
-Provides:       emacs-git-el = %{version}-%{release}
-Conflicts:      emacs-git-el < %{version}
-# rename from emacs-git-el2u to emacs-git2u-el
-Provides:       emacs-git-el%{?ius_suffix} = %{version}-%{release}
-Obsoletes:      emacs-git-el%{?ius_suffix} <= 2.1.3-2.ius
-
-%description -n emacs-%{name}-el
 %{summary}.
 
 %prep
-%setup -q -n git-%{version}
-%patch0 -p1
-%patch1 -p1
+# Verify GPG signatures
+gpghome="$(mktemp -qd)" # Ensure we don't use any existing gpg keyrings
+key="%{SOURCE9}"
+src="%{SOURCE0}"
+# Ignore noisy output from GnuPG 2.0, used on EL <= 7
+# https://bugs.gnupg.org/gnupg/issue1555
+gpg2 --dearmor --quiet --batch --yes $key >/dev/null
+# Upstream signs the uncompressed tarballs
+tar=${src/%.xz/}
+xz -dc $src > $tar
+gpgv2 --homedir "$gpghome" --quiet --keyring $key.gpg $tar.sign $tar
+rm -rf "$tar" "$gpghome" # Cleanup tar files and tmp gpg home dir
+
+# Ensure a blank line follows autosetup, el6 chokes otherwise
+# https://bugzilla.redhat.com/1310704
+%autosetup -p1 -n %{name}-%{version}%{?rcrev}
+
+# Apply aarch64 zlib patch (https://bugzilla.redhat.com/1582555)
+%ifarch aarch64
+%apply_patch %{SOURCE20}
+%endif
+
+# Install print-failed-test-output script
+install -p -m 755 %{SOURCE99} print-failed-test-output
+
+# Remove git-archimport from command list
+sed -i '/^git-archimport/d' command-list.txt
+
+%if ! %{with cvs}
+# Remove git-cvs* from command list
+sed -i '/^git-cvs/d' command-list.txt
+%endif
+
+%if ! %{with p4}
+# Remove git-p4 from command list
+sed -i '/^git-p4/d' command-list.txt
+%endif
 
 # Use these same options for every invocation of 'make'.
 # Otherwise it will rebuild in %%install due to flags changes.
@@ -349,18 +448,29 @@ LDFLAGS = %{__global_ldflags}
 NEEDS_CRYPTO_WITH_SSL = 1
 USE_LIBPCRE = 1
 ETC_GITCONFIG = %{_sysconfdir}/gitconfig
-DESTDIR = %{buildroot}
-INSTALL = install -p
+INSTALL_SYMLINKS = 1
 GITWEB_PROJECTROOT = %{_localstatedir}/lib/git
 GNU_ROFF = 1
-htmldir = %{_pkgdocdir}
+NO_PERL_CPAN_FALLBACKS = 1
+%if %{with python2}
+PYTHON_PATH = %{__python2}
+%else
+NO_PYTHON = 1
+%endif
+htmldir = %{?_pkgdocdir}%{!?_pkgdocdir:%{_docdir}/%{name}-%{version}}
 prefix = %{_prefix}
+perllibdir = %{perl_vendorlib}
 gitwebdir = %{_localstatedir}/www/git
+
+# Test options
+DEFAULT_TEST_TARGET = prove
+GIT_PROVE_OPTS = --verbose --normalize %{?_smp_mflags}
+GIT_TEST_OPTS = -x --verbose-log
+TEST_SHELL_PATH = /bin/bash
 EOF
 
 # Filter bogus perl requires
 # packed-refs comes from a comment in contrib/hooks/update-paranoid
-# YAML::Any is optional and not available on el5
 %if %{use_new_rpm_filters}
 %{?perl_default_filter}
 %global __requires_exclude %{?__requires_exclude:%__requires_exclude|}perl\\(packed-refs\\)
@@ -374,92 +484,105 @@ cat << \EOF > %{name}-req
 sed -e '/perl(packed-refs)/d'
 EOF
 
-%global __perl_requires %{_builddir}/git-%{version}/%{name}-req
+%global __perl_requires %{_builddir}/%{name}-%{version}%{?rcrev}/%{name}-req
 chmod +x %{__perl_requires}
 %endif
 
-%build
-make %{?_smp_mflags} all
-%if ! 0%{?_without_docs}
-make %{?_smp_mflags} doc
-%endif
+# Remove Git::LoadCPAN to ensure we use only system perl modules.  This also
+# allows the dependencies to be automatically processed by rpm.
+rm -rf perl/Git/LoadCPAN{.pm,/}
+grep -rlZ '^use Git::LoadCPAN::' | xargs -r0 sed -i 's/Git::LoadCPAN:://g'
 
-make -C contrib/emacs
+%build
+%make_build all %{?with_docs:doc}
 
 %if %{libsecret}
-make -C contrib/credential/libsecret/
+%make_build -C contrib/credential/libsecret/
 %endif
-make -C contrib/credential/netrc/
 
-make -C contrib/subtree/
+%make_build -C contrib/diff-highlight/
 
-# Remove shebang from bash-completion script
-sed -i '/^#!bash/,+1 d' contrib/completion/git-completion.bash
+%make_build -C contrib/subtree/
+
+# Fix shebang in a few places to silence rpmlint complaints
+#
+# The multimail hook is installed with git.  Use python3 to avoid an
+# unnecessary python2 dependency.
+%if %{with python2}
+sed -i -e '1s@#! */usr/bin/env python$@#!%{__python2}@' \
+    contrib/fast-import/import-zips.py \
+    contrib/hg-to-git/hg-to-git.py \
+    contrib/hooks/multimail/git_multimail.py \
+    contrib/hooks/multimail/migrate-mailhook-config \
+    contrib/hooks/multimail/post-receive.example \
+    contrib/svn-fe/svnrdump_sim.py
+%endif
+%if %{with python3}
+sed -i -e '1s@#!\( */usr/bin/env python\|%{__python2}\)$@#!%{__python3}@' \
+    contrib/hooks/multimail/git_multimail.py \
+    contrib/hooks/multimail/migrate-mailhook-config \
+    contrib/hooks/multimail/post-receive.example
+%endif
 
 %install
-rm -rf %{buildroot}
-make %{?_smp_mflags} INSTALLDIRS=vendor install
-%if ! %{use_prebuilt_docs} && ! 0%{?_without_docs}
-make %{?_smp_mflags} INSTALLDIRS=vendor install-doc
-%else
-cp -a prebuilt_docs/man/* %{buildroot}%{_mandir}
-cp -a prebuilt_docs/html/* Documentation/
-%endif
+%make_install %{?with_docs:install-doc}
 
 %global elispdir %{_emacs_sitelispdir}/git
-make -C contrib/emacs install \
-    emacsdir=%{buildroot}%{elispdir}
-for elc in %{buildroot}%{elispdir}/*.elc ; do
-    install -pm 644 contrib/emacs/$(basename $elc .elc).el \
-    %{buildroot}%{elispdir}
+pushd contrib/emacs >/dev/null
+for el in *.el ; do
+    # Note: No byte-compiling is done.  These .el files are one-line stubs
+    # which only serve to point users to better alternatives.
+    install -Dpm 644 $el %{buildroot}%{elispdir}/$el
+    rm -f $el # clean up to avoid cruft in git-core-doc
 done
-install -Dpm 644 %{SOURCE10} \
-    %{buildroot}%{_emacs_sitestartdir}/git-init.el
+popd >/dev/null
 
 %if %{libsecret}
 install -pm 755 contrib/credential/libsecret/git-credential-libsecret \
-    %{buildroot}%{gitcoredir}
-# Remove built binary files, otherwise they will be installed in doc
-make -C contrib/credential/libsecret/ clean
+    %{buildroot}%{gitexecdir}
 %endif
 install -pm 755 contrib/credential/netrc/git-credential-netrc \
-    %{buildroot}%{gitcoredir}
+    %{buildroot}%{gitexecdir}
 
-make -C contrib/subtree install
-%if ! %{use_prebuilt_docs}
-make -C contrib/subtree install-doc
-%endif
-# it's ugly hack, but this file don't need to be copied to this directory
-# it's already part of git-core-doc and it's alone here
-rm -f %{buildroot}%{_pkgdocdir}/git-subtree.html
+%make_install -C contrib/subtree %{?with_docs:install-doc}
 
 mkdir -p %{buildroot}%{_sysconfdir}/httpd/conf.d
-install -pm 0644 %{SOURCE12} %{buildroot}%{_sysconfdir}/httpd/conf.d/git.conf
+install -pm 0644 %{SOURCE13} %{buildroot}%{_sysconfdir}/httpd/conf.d/%{gitweb_httpd_conf}
 sed "s|@PROJECTROOT@|%{_localstatedir}/lib/git|g" \
     %{SOURCE14} > %{buildroot}%{_sysconfdir}/gitweb.conf
 
-find %{buildroot} -type f -name .packlist -exec rm -f {} ';'
-find %{buildroot} -type f -name '*.bs' -empty -exec rm -f {} ';'
-find %{buildroot} -type f -name perllocal.pod -exec rm -f {} ';'
-
-# Clean up contrib/credential to avoid cruft in the git-core-doc docdir
-rm -rf contrib/credential
+# install contrib/diff-highlight and clean up to avoid cruft in git-core-doc
+install -Dpm 0755 contrib/diff-highlight/diff-highlight \
+    %{buildroot}%{_datadir}/git-core/contrib/diff-highlight
+rm -rf contrib/diff-highlight/{Makefile,diff-highlight,*.perl,t}
 
 # Clean up contrib/subtree to avoid cruft in the git-core-doc docdir
-rm -rf contrib/subtree/{INSTALL,Makefile,git-subtree{,.{1,sh,txt,xml}},t}
+# Move git-subtree.txt to Documentation so it can be installed later in docdir
+mv contrib/subtree/git-subtree.txt Documentation/
+rm -rf contrib/subtree/{INSTALL,Makefile,git-subtree{,.{1,html,sh,txt,xml}},t}
 
 # git-archimport is not supported
 find %{buildroot} Documentation -type f -name 'git-archimport*' -exec rm -f {} ';'
 
-exclude_re="archimport|email|git-citool|git-cvs|git-daemon|git-gui|git-remote-bzr|git-remote-hg|gitk|p4|svn"
-(find %{buildroot}{%{_bindir},%{_libexecdir}} -type f | grep -vE "$exclude_re" | sed -e s@^%{buildroot}@@) > bin-man-doc-files
+%if ! %{with cvs}
+# Remove git-cvs* from %%{_bindir} and %%{gitexecdir}
+find %{buildroot}{%{_bindir},%{gitexecdir}} -type f -name 'git-cvs*' -exec rm -f {} ';'
+%endif
+
+%if ! %{with p4}
+# Remove *p4* from %%{_bindir} and %%{gitexecdir}
+find %{buildroot}{%{_bindir},%{gitexecdir}} -type f -name '*p4*' -exec rm -f {} ';'
+%endif
+
+exclude_re="archimport|email|git-(citool|cvs|daemon|gui|p4|subtree|(remote-test)?svn)|gitk|p4merge"
+(find %{buildroot}{%{_bindir},%{_libexecdir}} -type f -o -type l | grep -vE "$exclude_re" | sed -e s@^%{buildroot}@@) > bin-man-doc-files
 (find %{buildroot}{%{_bindir},%{_libexecdir}} -mindepth 1 -type d | grep -vE "$exclude_re" | sed -e 's@^%{buildroot}@%dir @') >> bin-man-doc-files
 (find %{buildroot}%{perl_vendorlib} -type f | sed -e s@^%{buildroot}@@) > perl-git-files
 (find %{buildroot}%{perl_vendorlib} -mindepth 1 -type d | sed -e 's@^%{buildroot}@%dir @') >> perl-git-files
 # Split out Git::SVN files
 grep Git/SVN perl-git-files > perl-git-svn-files
 sed -i "/Git\/SVN/ d" perl-git-files
-%if %{!?_without_docs:1}0
+%if %{with docs}
 (find %{buildroot}%{_mandir} -type f | grep -vE "$exclude_re|Git" | sed -e s@^%{buildroot}@@ -e 's/$/*/' ) >> bin-man-doc-files
 %else
 rm -rf %{buildroot}%{_mandir}
@@ -467,12 +590,15 @@ rm -rf %{buildroot}%{_mandir}
 
 mkdir -p %{buildroot}%{_localstatedir}/lib/git
 %if %{use_systemd}
-mkdir -p %{buildroot}%{_unitdir}
-cp -a %{SOURCE15} %{SOURCE16} %{buildroot}%{_unitdir}
+install -Dp -m 0644 %{SOURCE16} %{buildroot}%{_unitdir}/git.socket
+perl -p \
+    -e "s|\@GITEXECDIR\@|%{gitexecdir}|g;" \
+    -e "s|\@BASE_PATH\@|%{_localstatedir}/lib/git|g;" \
+    %{SOURCE15} > %{buildroot}%{_unitdir}/git@.service
 %else
 mkdir -p %{buildroot}%{_sysconfdir}/xinetd.d
 perl -p \
-    -e "s|\@GITCOREDIR\@|%{gitcoredir}|g;" \
+    -e "s|\@GITEXECDIR\@|%{gitexecdir}|g;" \
     -e "s|\@BASE_PATH\@|%{_localstatedir}/lib/git|g;" \
     %{SOURCE11} > %{buildroot}%{_sysconfdir}/xinetd.d/git
 %endif
@@ -486,10 +612,12 @@ mkdir -p %{buildroot}%{_datadir}/git-core/contrib/completion
 install -pm 644 contrib/completion/git-completion.tcsh \
     %{buildroot}%{_datadir}/git-core/contrib/completion/
 
-# Move contrib/hooks out of %%docdir and make them executable
+# Drop .py extension from git_multimail to avoid byte-compiling
+mv contrib/hooks/multimail/git_multimail{.py,}
+
+# Move contrib/hooks out of %%docdir
 mkdir -p %{buildroot}%{_datadir}/git-core/contrib
 mv contrib/hooks %{buildroot}%{_datadir}/git-core/contrib
-chmod +x %{buildroot}%{_datadir}/git-core/contrib/hooks/*
 pushd contrib > /dev/null
 ln -s ../../../git-core/contrib/hooks
 popd > /dev/null
@@ -500,31 +628,101 @@ install -pm 644 contrib/completion/git-prompt.sh \
     %{buildroot}%{_datadir}/git-core/contrib/completion/
 
 # install git-gui .desktop file
-desktop-file-install \
-  --dir=%{buildroot}%{_datadir}/applications %{SOURCE13}
+desktop-file-install --dir=%{buildroot}%{_datadir}/applications %{SOURCE12}
 
 # find translations
-%find_lang git git.lang
-cat git.lang >> bin-man-doc-files
+%find_lang %{name} %{name}.lang
+cat %{name}.lang >> bin-man-doc-files
 
 # quiet some rpmlint complaints
 chmod -R g-w %{buildroot}
-find %{buildroot} -name git-mergetool--lib | xargs chmod a-x
-find . -name .gitignore -delete
+chmod a-x %{buildroot}%{gitexecdir}/git-mergetool--lib
+# These files probably are not needed
+find . -regex '.*/\.\(git\(attributes\|ignore\)\|perlcriticrc\)' -delete
 chmod a-x Documentation/technical/api-index.sh
-find contrib -type f | xargs chmod -x
+find contrib -type f -print0 | xargs -r0 chmod -x
 
 # Split core files
-not_core_re="git-(add--interactive|am|credential-(libsecret|netrc)|difftool|instaweb|relink|request-pull|send-mail|submodule)|gitweb|prepare-commit-msg|pre-rebase"
+not_core_re="git-(add--interactive|credential-(libsecret|netrc)|difftool|filter-branch|instaweb|request-pull|send-mail)|gitweb"
 grep -vE "$not_core_re|%{_mandir}" bin-man-doc-files > bin-files-core
+touch man-doc-files-core
+%if %{with docs}
 grep -vE "$not_core_re" bin-man-doc-files | grep "%{_mandir}" > man-doc-files-core
-grep -E "$not_core_re" bin-man-doc-files > bin-man-doc-git-files
+%endif
+grep -E  "$not_core_re" bin-man-doc-files > bin-man-doc-git-files
+
+##### DOC
+# place doc files into %%{_pkgdocdir} and split them into expected packages
+# contrib
+not_core_doc_re="(git-(cvs|gui|citool|daemon|subtree))|p4|svn|email|gitk|gitweb"
+mkdir -p %{buildroot}%{_pkgdocdir}/
+cp -pr README.md Documentation/*.txt Documentation/RelNotes contrib %{buildroot}%{_pkgdocdir}/
+# Remove contrib/{credential,svn-fe}, they have nothing useful for documentation
+rm -rf %{buildroot}%{_pkgdocdir}/contrib/{credential,svn-fe}/
+cp -p gitweb/INSTALL %{buildroot}%{_pkgdocdir}/INSTALL.gitweb
+cp -p gitweb/README %{buildroot}%{_pkgdocdir}/README.gitweb
+
+%if %{with docs}
+cp -pr Documentation/*.html Documentation/docbook-xsl.css %{buildroot}%{_pkgdocdir}/
+cp -pr Documentation/{howto,technical} %{buildroot}%{_pkgdocdir}/
+find %{buildroot}%{_pkgdocdir}/{howto,technical} -type f \
+    |grep -o "%{_pkgdocdir}.*$" >> man-doc-files-core
+%endif
+
+{
+    find %{buildroot}%{_pkgdocdir} -type f -maxdepth 1 \
+        | grep -o "%{_pkgdocdir}.*$" \
+        | grep -vE "$not_core_doc_re"
+    find %{buildroot}%{_pkgdocdir}/{contrib,RelNotes} -type f \
+        | grep -o "%{_pkgdocdir}.*$"
+    find %{buildroot}%{_pkgdocdir} -type d | grep -o "%{_pkgdocdir}.*$" \
+        | sed "s/^/\%dir /"
+} >> man-doc-files-core
+##### #DOC
 
 %check
-make test
+%if %{with docs} && %{with linkcheck}
+# Test links in HTML documentation
+find %{buildroot}%{_pkgdocdir} -name "*.html" -print0 | xargs -r0 linkchecker
+%endif
 
-%clean
-rm -rf %{buildroot}
+# Tests to skip on all releases and architectures
+GIT_SKIP_TESTS=""
+
+%ifarch aarch64 %{arm} %{power64}
+# Skip tests which fail on aarch64, arm, and ppc
+#
+# The following 2 tests use run_with_limited_cmdline, which calls ulimit -s 128
+# to limit the maximum stack size.
+# t5541.33 'push 2000 tags over http'
+# t5551.25 'clone the 2,000 tag repo to check OS command line overflow'
+GIT_SKIP_TESTS="$GIT_SKIP_TESTS t5541.33 t5551.25"
+%endif
+
+%ifarch %{power64}
+# Skip tests which fail on ppc
+#
+# t9115-git-svn-dcommit-funky-renames is disabled because it frequently fails.
+# The port it uses (9115) is already in use.  It is unclear if this is
+# due to an issue in the test suite or a conflict with some other process on
+# the build host.  It only appears to occur on ppc-arches.
+GIT_SKIP_TESTS="$GIT_SKIP_TESTS t9115"
+%endif
+
+export GIT_SKIP_TESTS
+
+# Set LANG so various UTF-8 tests are run
+export LANG=en_US.UTF-8
+
+# Explicitly enable tests which may be skipped opportunistically
+# (Check for variables set via test_tristate in the test suite)
+export GIT_SVN_TEST_HTTPD=true
+export GIT_TEST_GIT_DAEMON=true
+export GIT_TEST_HTTPD=true
+export GIT_TEST_SVNSERVE=true
+
+# Run the tests
+make test || ./print-failed-test-output
 
 %if %{use_systemd}
 %post daemon
@@ -538,309 +736,631 @@ rm -rf %{buildroot}
 %endif
 
 %files -f bin-man-doc-git-files
+%if %{emacs_filesystem}
+%{elispdir}
+%endif
+%{_datadir}/git-core/contrib/diff-highlight
+%{_datadir}/git-core/contrib/hooks/multimail
 %{_datadir}/git-core/contrib/hooks/update-paranoid
 %{_datadir}/git-core/contrib/hooks/setgitperms.perl
+%{_datadir}/git-core/templates/hooks/fsmonitor-watchman.sample
+%{_datadir}/git-core/templates/hooks/pre-rebase.sample
+%{_datadir}/git-core/templates/hooks/prepare-commit-msg.sample
+
+%files all
+# No files for you!
 
 %files core -f bin-files-core
+#NOTE: this is only use of the %%doc macro in this spec file and should not
+#      be used elsewhere
+%{!?_licensedir:%global license %doc}
 %license COPYING
-# exlude is best way here because of troubles with symlinks inside git-core/
+# exclude is best way here because of troubles with symlinks inside git-core/
+%exclude %{_datadir}/git-core/contrib/diff-highlight
+%exclude %{_datadir}/git-core/contrib/hooks/multimail
 %exclude %{_datadir}/git-core/contrib/hooks/update-paranoid
 %exclude %{_datadir}/git-core/contrib/hooks/setgitperms.perl
+%exclude %{_datadir}/git-core/templates/hooks/fsmonitor-watchman.sample
+%exclude %{_datadir}/git-core/templates/hooks/pre-rebase.sample
+%exclude %{_datadir}/git-core/templates/hooks/prepare-commit-msg.sample
 %{bashcomproot}
 %{_datadir}/git-core/
 
 %files core-doc -f man-doc-files-core
-%doc README.md Documentation/*.txt Documentation/RelNotes contrib/
-%{!?_without_docs: %doc Documentation/*.html Documentation/docbook-xsl.css}
-%{!?_without_docs: %doc Documentation/howto Documentation/technical}
-%if ! %{use_prebuilt_docs}
-%{!?_without_docs: %doc contrib/subtree/git-subtree.html}
+%if 0%{?rhel} && 0%{?rhel} <= 7
+# .py files are only bytecompiled on EL <= 7
+%exclude %{_pkgdocdir}/contrib/*/*.py[co]
+%endif
+%{_pkgdocdir}/contrib/hooks
+%if ! %{with cvs}
+%{?with_docs:%{_mandir}/man1/*cvs*.1*}
+%{?with_docs:%{_pkgdocdir}/git-cvs*}
+%endif
+%if ! %{with p4}
+%{?with_docs:%{_mandir}/man1/*p4*.1*}
+%{?with_docs:%{_pkgdocdir}/*p4*}
 %endif
 
-
-%files p4
-%{gitcoredir}/*p4*
-%{gitcoredir}/mergetools/p4merge
-%doc Documentation/*p4*.txt
-%{!?_without_docs: %{_mandir}/man1/*p4*.1*}
-%{!?_without_docs: %doc Documentation/*p4*.html }
-
-%files svn
-%{gitcoredir}/*svn*
-%doc Documentation/*svn*.txt
-%{!?_without_docs: %{_mandir}/man1/*svn*.1*}
-%{!?_without_docs: %doc Documentation/*svn*.html }
-
+%if %{with cvs}
 %files cvs
-%doc Documentation/*git-cvs*.txt
+%{_pkgdocdir}/*git-cvs*.txt
 %{_bindir}/git-cvsserver
-%{gitcoredir}/*cvs*
-%{!?_without_docs: %{_mandir}/man1/*cvs*.1*}
-%{!?_without_docs: %doc Documentation/*git-cvs*.html }
-
-%files email
-%doc Documentation/*email*.txt
-%{gitcoredir}/*email*
-%{!?_without_docs: %{_mandir}/man1/*email*.1*}
-%{!?_without_docs: %doc Documentation/*email*.html }
-
-%files gui
-%{gitcoredir}/git-gui*
-%{gitcoredir}/git-citool
-%{_datadir}/applications/*git-gui.desktop
-%{_datadir}/git-gui/
-%{!?_without_docs: %{_mandir}/man1/git-gui.1*}
-%{!?_without_docs: %doc Documentation/git-gui.html}
-%{!?_without_docs: %{_mandir}/man1/git-citool.1*}
-%{!?_without_docs: %doc Documentation/git-citool.html}
-
-%files gitk
-%doc Documentation/*gitk*.txt
-%{_bindir}/*gitk*
-%{_datadir}/gitk
-%{!?_without_docs: %{_mandir}/man1/*gitk*.1*}
-%{!?_without_docs: %doc Documentation/*gitk*.html }
-
-%files perl-Git -f perl-git-files
-%exclude %{_mandir}/man3/*Git*SVN*.3pm*
-%{!?_without_docs: %{_mandir}/man3/*Git*.3pm*}
-
-%files perl-Git-SVN -f perl-git-svn-files
-%{!?_without_docs: %{_mandir}/man3/*Git*SVN*.3pm*}
-
-%files -n emacs-%{name}
-%doc contrib/emacs/README
-%dir %{elispdir}
-%{elispdir}/*.elc
-%{_emacs_sitestartdir}/git-init.el
-
-%files -n emacs-%{name}-el
-%{elispdir}/*.el
+%{gitexecdir}/*cvs*
+%{?with_docs:%{_mandir}/man1/*cvs*.1*}
+%{?with_docs:%{_pkgdocdir}/*git-cvs*.html}
+%endif
 
 %files daemon
-%doc Documentation/*daemon*.txt
+%{_pkgdocdir}/git-daemon*.txt
 %if %{use_systemd}
 %{_unitdir}/git.socket
 %{_unitdir}/git@.service
 %else
 %config(noreplace)%{_sysconfdir}/xinetd.d/git
 %endif
-%{gitcoredir}/git-daemon
+%{gitexecdir}/git-daemon
 %{_localstatedir}/lib/git
-%{!?_without_docs: %{_mandir}/man1/*daemon*.1*}
-%{!?_without_docs: %doc Documentation/*daemon*.html}
+%{?with_docs:%{_mandir}/man1/git-daemon*.1*}
+%{?with_docs:%{_pkgdocdir}/git-daemon*.html}
 
-%files gitweb
-%doc gitweb/INSTALL gitweb/README
+%if ! %{emacs_filesystem}
+%files -n emacs-git
+%{_pkgdocdir}/contrib/emacs/README
+%{elispdir}
+%endif
+
+%files email
+%{_pkgdocdir}/*email*.txt
+%{gitexecdir}/*email*
+%{?with_docs:%{_mandir}/man1/*email*.1*}
+%{?with_docs:%{_pkgdocdir}/*email*.html}
+
+%files -n gitk
+%{_pkgdocdir}/*gitk*.txt
+%{_bindir}/*gitk*
+%{_datadir}/gitk
+%{?with_docs:%{_mandir}/man1/*gitk*.1*}
+%{?with_docs:%{_pkgdocdir}/*gitk*.html}
+
+%files -n gitweb
+%{_pkgdocdir}/*.gitweb
+%{_pkgdocdir}/gitweb*.txt
+%{?with_docs:%{_pkgdocdir}/gitweb*.html}
 %config(noreplace)%{_sysconfdir}/gitweb.conf
-%config(noreplace)%{_sysconfdir}/httpd/conf.d/git.conf
+%config(noreplace)%{_sysconfdir}/httpd/conf.d/%{gitweb_httpd_conf}
 %{_localstatedir}/www/git/
 
+%files gui
+%{gitexecdir}/git-gui*
+%{gitexecdir}/git-citool
+%{_datadir}/applications/*git-gui.desktop
+%{_datadir}/git-gui/
+%{_pkgdocdir}/git-gui.txt
+%{_pkgdocdir}/git-citool.txt
+%{?with_docs:%{_mandir}/man1/git-gui.1*}
+%{?with_docs:%{_pkgdocdir}/git-gui.html}
+%{?with_docs:%{_mandir}/man1/git-citool.1*}
+%{?with_docs:%{_pkgdocdir}/git-citool.html}
 
-%files all
-# No files for you!
+%if %{with p4}
+%files p4
+%{gitexecdir}/*p4*
+%{gitexecdir}/mergetools/p4merge
+%{_pkgdocdir}/*p4*.txt
+%{?with_docs:%{_mandir}/man1/*p4*.1*}
+%{?with_docs:%{_pkgdocdir}/*p4*.html}
+%endif
+
+%files -n perl-Git -f perl-git-files
+%{?with_docs:%{_mandir}/man3/Git.3pm*}
+
+%files -n perl-Git-SVN -f perl-git-svn-files
+
+%files subtree
+%{gitexecdir}/git-subtree
+%{_pkgdocdir}/git-subtree.txt
+%{?with_docs:%{_mandir}/man1/git-subtree.1*}
+%{?with_docs:%{_pkgdocdir}/git-subtree.html}
+
+%files svn
+%{gitexecdir}/git-remote-testsvn
+%{gitexecdir}/git-svn
+%{_pkgdocdir}/git-svn.txt
+%{?with_docs:%{_mandir}/man1/git-svn.1*}
+%{?with_docs:%{_pkgdocdir}/git-svn.html}
 
 %changelog
-* Fri Aug 11 2017 Carl George <carl@george.computer> - 2.14.1-1.ius
-- Latest upstream
+* Mon Jun 04 2018 Todd Zullinger <tmz@pobox.com> - 2.18.0-0.1.rc1
+- Update to 2.18.0-rc1
+- Drop flaky & out-of-place netrc credential helper tests
 
-* Fri Aug 04 2017 Ben Harper <ben.harper@rackspace.com> - 2.14.0-1.ius
-- Latest upstream
+* Fri Jun 01 2018 Todd Zullinger <tmz@pobox.com> - 2.18.0-0.0.rc0.1
+- add -p: fix counting empty context lines in edited patches
 
-* Wed Aug 02 2017 Ben Harper <ben.harper@rackspace.com> - 2.13.4-1.ius
-- Latest upstream
-- drop old OS conditionals and prebuilt documentation for EL5 from Fedora see:
-  http://pkgs.fedoraproject.org/cgit/rpms/git.git/commit/?id=903d8f35ed8ae16bece8ae8033f3d3926cc97595
+* Wed May 30 2018 Todd Zullinger <tmz@pobox.com> - 2.18.0-0.0.rc0
+- Update to 2.18.0-rc0
+- Use new INSTALL_SYMLINKS setting
 
-* Thu Jul 13 2017 Ben Harper <ben.harper@rackspace.com> - 2.13.3-1.ius
-- Latest upstream
+* Wed May 30 2018 Todd Zullinger <tmz@pobox.com> - 2.17.1-3
+- Use %%apply_patch for aarch64 zlib patch, return to %%autosetup
+- Disable jgit tests on s390x, they're unreliable
+- Use %make_build and %make_install
 
-* Mon Jun 26 2017 Carl George <carl.george@rackspace.com> - 2.13.2-1.ius
-- Latest upstream
+* Tue May 29 2018 Todd Zullinger <tmz@pobox.com> - 2.17.1-2
+- packfile: Correct zlib buffer handling (#1582555)
 
-* Mon Jun 05 2017 Ben Harper <ben.harper@rackspace.com> - 2.13.1-1.ius
-- Latest upstream
-- remove BLK_SHA1 option, from Fedora see:
-  http://pkgs.fedoraproject.org/cgit/rpms/git.git/commit/?id=e15c234c87b84d0cab29f62a40c8c3efc401aae8
+* Tue May 29 2018 Todd Zullinger <tmz@pobox.com> - 2.17.1-1
+- Update to 2.17.1 (CVE-2018-11233, CVE-2018-11235)
 
-* Wed May 10 2017 Ben Harper <ben.harper@rackspace.com> - 2.13.1-1.ius
-- Latest upstream
+* Thu May 24 2018 Todd Zullinger <tmz@pobox.com> - 2.17.0-4
+- Fix segfault in rev-parse with invalid input (#1581678)
+- Move TEST_SHELL_PATH setting to config.mak
 
-* Tue Apr 04 2017 Carl George <carl.george@rackspace.com> - 2.12.2-1.ius
-- Latest upstream
-- Remove EL5 support
-- Clean up sources to better align with Fedora
-- Remove unnecessary rsync requirement from git-core (Fedora)
-- Run git test suite (Fedora)
-- Use %%{_mandir} in git/git-core file list filters (Fedora)
-- Clean up contrib/{credential,subtree} to avoid cruft in git-core-doc (Fedora)
-- Switch from gnome-keyring to libsecret credential helper
+* Mon Apr 16 2018 Todd Zullinger <tmz@pobox.com> - 2.17.0-3
+- Move linkcheck macro to existing fedora/rhel > 7 block
+- Re-enable t5000-tar-tree.sh test on f28
 
-* Tue Mar 21 2017 Ben Harper <ben.harper@rackspace.com> - 2.12.1-1.ius
-- Latest upstream
+* Fri Apr 13 2018 Pavel Cahyna <pcahyna@redhat.com>
+- Use BuildRequires: perl-interpreter per the packaging guidelines
+- Update conditions for future RHEL
 
-* Mon Feb 27 2017 Ben Harper <ben.harper@rackspace.com> - 2.12.0-1.ius
-- Latest upstream
-- remove Patch100, fixed upstream
+* Tue Apr 10 2018 Todd Zullinger <tmz@pobox.com> - 2.17.0-2
+- Require perl-generators on EL > 7
 
-* Fri Feb 03 2017 Ben Harper <ben.harper@rackspace.com> - 2.11.1-1.ius
-- Latest upstream
+* Mon Apr 09 2018 Todd Zullinger <tmz@pobox.com>
+- daemon: use --log-destination=stderr with systemd
+- daemon: fix condition for redirecting stderr
+- git-svn: avoid uninitialized value warning
 
-* Wed Nov 30 2016 Ben Harper <ben.harper@rackspace.com> - 2.11.0-1.ius
-- Latest upstream
+* Sun Apr 08 2018 Todd Zullinger <tmz@pobox.com>
+- Clean up redundant and unneeded Requires
 
-* Mon Oct 31 2016 Ben Harper <ben.harper@rackspace.com> - 2.10.2-1.ius
-- Latest upstream
+* Sat Apr 07 2018 Todd Zullinger <tmz@pobox.com>
+- Remove Git::LoadCPAN to ensure we use only system perl modules
 
-* Tue Oct 04 2016 Ben Harper <ben.harper@rackspace.com> - 2.10.1-1.ius
-- Latest upstream
+* Mon Apr 02 2018 Todd Zullinger <tmz@pobox.com>
+- Allow git-p4 subpackage to be toggled via --with/--without
+- Use %%bcond_(with|without) to enable/disable python3
+- Add support for disabling python2
 
-* Tue Sep 06 2016 Ben Harper <ben.harper@rackspace.com> - 2.10.0-1.ius
-- Latest upstream
+* Mon Apr 02 2018 Todd Zullinger <tmz@pobox.com> - 2.17.0-1
+- Update to 2.17.0
 
-* Mon Aug 15 2016 Ben Harper <ben.harper@rackspace.com> - 2.9.3-1.ius
-- Latest upstream
+* Wed Mar 28 2018 Todd Zullinger <tmz@pobox.com> - 2.17.0-0.2.rc2
+- Update to 2.17.0-rc2
 
-* Mon Jul 25 2016 Ben Harper <ben.harper@rackspace.com> - 2.9.2-1.ius
-- Latest upstream
+* Tue Mar 27 2018 Todd Zullinger <tmz@pobox.com>
+- Allow cvs subpackage to be toggled via --with/--without
 
-* Tue Jul 12 2016 Carl George <carl.george@rackspace.com> - 2.9.1-1.ius
-- Latest upstream
+* Tue Mar 27 2018 Joe Orton <jorton@redhat.com>
+- Disable CVS support on EL > 7
 
-* Mon Jun 20 2016 Carl George <carl.george@rackspace.com> - 2.9.0-1.ius
-- Latest upstream
-- Use perl(MOD::NAME) format for perl-DBD-SQLite dep (Fedora)
-- Define __global_ldflags on EL < 7 (Fedora)
-- Remove all '.gitignore' files from packages (Fedora)
+* Tue Mar 27 2018 Todd Zullinger <tmz@pobox.com> - 2.17.0-0.1.rc1.2
+- Add missing perl(Mail::Address) requirement (#1561086)
 
-* Tue Jun 07 2016 Ben Harper <ben.harper@rackspace.com> - 2.8.4-1.ius
-- Latest upstream
+* Thu Mar 22 2018 Todd Zullinger <tmz@pobox.com> - 2.17.0-0.1.rc1.1
+- Drop .py extension from contrib/hooks/multimail/git_multimail.py
+- Remove unnecessary "chmod +x contrib/hooks/*"
 
-* Fri May 20 2016 Carl George <carl.george@rackspace.com> - 2.8.3-1.ius
-- Latest upstream
+* Wed Mar 21 2018 Todd Zullinger <tmz@pobox.com> - 2.17.0-0.1.rc1
+- Update to 2.17.0-rc1
 
-* Mon May 02 2016 Ben Harper <ben.harper@rackspace.com> - 2.8.2-1.ius
-- Latest upstream
-- Install git-credentials-netrc and set LDFLAGS to align with Fedora
-  http://pkgs.fedoraproject.org/cgit/rpms/git.git/commit/?id=40aebfdc03db94710343ddc1b0e0208a14684ef1
-  http://pkgs.fedoraproject.org/cgit/rpms/git.git/commit/?id=58fa1693f75e7c2bbf4fe4854214bbbda6a527ab
+* Fri Mar 16 2018 Todd Zullinger <tmz@pobox.com>
+- Add findutils BuildRequires, improve 'find | xargs' calls
 
-* Mon Apr 04 2016 Ben Harper <ben.harper@rackspace.com> - 2.8.1-1.ius
-- Latest upstream
+* Thu Mar 15 2018 Todd Zullinger <tmz@pobox.com> - 2.17.0-0.0.rc0
+- Update to 2.17.0-rc0
+- Adjust for simplified perl install
+- Require git-core rather than git for git-daemon
+- Rename gitweb httpd config file
+- Install contrib/diff-highlight (#1550251)
 
-* Tue Mar 29 2016 Ben Harper <ben.harper@rackspace.com> - 2.8.0-1.ius
-- Latest upstream
-- update bash-completion and %%file to align with Fedora
-  http://pkgs.fedoraproject.org/cgit/rpms/git.git/commit/?id=185b89b8d418351d8d810a4ddc38a70f6ecdcb6c
-  http://pkgs.fedoraproject.org/cgit/rpms/git.git/commit/?id=63f895c570bcd06e328d3d4f916cbff4cd00b08e
+* Thu Mar 15 2018 Todd Zullinger <tmz@pobox.com>
+- Use symlinks instead of hardlinks for installed binaries
 
-* Thu Mar 17 2016 Carl George <carl.george@rackspace.com> - 2.7.4-1.ius
-- Latest upstream
+* Fri Feb 23 2018 Todd Zullinger <tmz@pobox.com>
+- Improve hardening flags for EL-6 & EL-7
 
-* Fri Mar 11 2016 Ben Harper <ben.harper@rackspace.com> - 2.7.3-1.ius
-- Latest upstream
+* Fri Feb 16 2018 Todd Zullinger <tmz@pobox.com> - 2.16.2-1
+- Update to 2.16.2
+- Add gawk, gcc, make, and sed BuildRequires
 
-* Wed Feb 24 2016 Ben Harper <ben.harper@rackspace.com> - 2.7.2-1.ius
-- Latest upstream
-- Add Patch100 to address https://github.com/iuscommunity-pkg/git2u/issues/3
+* Wed Feb 07 2018 Todd Zullinger <tmz@pobox.com> - 2.16.1-3
+- Order %%files and %%packages sections by name
+- Remove obsolete %%defattr
+- Don't package contrib/svn-fe in %%doc
+- Split git-subtree into a separate package
 
-* Mon Feb 08 2016 Ben Harper <ben.harper@rackspace.com> - 2.7.1-1.ius
-- Latest upstream
+* Wed Feb 07 2018 Fedora Release Engineering <releng@fedoraproject.org> - 2.16.1-2.1
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_28_Mass_Rebuild
 
-* Fri Jan 08 2016 Carl George <carl.george@rackspace.com> - 2.7.0-1.ius
-- Latest upstream
-- Patch4 (infinite loop) no longer needed
-- Remove hg/bzr subpackages; corresponding scripts removed from upstream source
-- Create git-core and git-core-doc subpackages (following Fedora)
-- Rename gitweb2u to git2u-gitweb
-- Rename gitk2u to git2u-gitk
-- Rename perl-Git2u to git2u-perl-Git
-- Rename perl-Git2u-SVN to git2u-perl-Git-SVN
+* Mon Jan 29 2018 Todd Zullinger <tmz@pobox.com> - 2.16.1-2
+- git-svn: avoid segfaults in 'git svn branch', re-enable t9128, t9141, and
+  t9167
+- Drop obsolete BuildRoot, Group, %%clean, and buildroot cleanup
 
-* Wed Dec 09 2015 Ben Harper <ben.harper@rackspace.com> - 2.6.4-1.ius
-- Latest upstream
+* Mon Jan 22 2018 Todd Zullinger <tmz@pobox.com> - 2.16.1-1
+- Update to 2.16.1
+- Avoid python dependency in git-core (#1536471)
 
-* Mon Nov 23 2015 Carl George <carl.george@rackspace.com> - 2.6.3-1.ius
-- Latest upstream
+* Thu Jan 18 2018 Todd Zullinger <tmz@pobox.com> - 2.16.0-1
+- Update to 2.16.0
+- Use 'prove' as test harness, enable shell tracing
+- Disable t5000-tar-tree.sh on x86 in f28
 
-* Thu Nov 05 2015 Carl George <carl.george@rackspace.com> - 2.6.2-1.ius
-- Latest upstream
-- git-svn requires perl-Digest-MD5 (#1218176) (Fedora)
+* Fri Jan 12 2018 Todd Zullinger <tmz@pobox.com>
+- Add %%{emacs_filesystem} to simplify emacs support
+- Use .in template for git@.service to ensure paths are substituted
 
-* Mon Oct 12 2015 Ben Harper <ben.harper@rackspace.com> -  2.6.1-1.ius
-- Latest upstream
+* Thu Jan 11 2018 Todd Zullinger <tmz@pobox.com>
+- Update BuildRequires for tests
 
-* Mon Sep 28 2015 Carl George <carl.george@rackspace.com> - 2.5.3-1.ius
-- Latest upstream
-- Use correct bash completion directory
-- Import Fedora patch to fix infinite loop rhbz#1204193
+* Mon Jan 08 2018 Todd Zullinger <tmz@pobox.com>
+- Avoid excluding non-existent .py[co] files in %%doc
+- Remove obsolete gnome-keyring credential helper
 
-* Mon Sep 14 2015 Carl George <carl.george@rackspace.com> - 2.5.2-1.ius
-- Latest upstream
+* Sun Jan 07 2018 Todd Zullinger <tmz@pobox.com>
+- Explicitly enable tests which may be skipped opportunistically
 
-* Mon Aug 31 2015 Carl George <carl.george@rackspace.com> - 2.5.1-1.ius
-- Latest upstream
+* Sat Dec 30 2017 Todd Zullinger <tmz@pobox.com>
+- Fix perl requires filtering on EL-6
 
-* Tue Jul 28 2015 Ben Harper <ben.harper@rackspace.com> - 2.5.0-1.ius
-- Latest upstream
+* Thu Nov 30 2017 Todd Zullinger <tmz@pobox.com> - 2.15.1-3
+- Include verbose logs in build output for 'make test' failures
+- Use %%autosetup macro to unpack and patch source
+- Remove second make invocation for doc build/install
+- Fix builds using '--without docs'
+- Mark git-core-docs sub-package noarch
+- Avoid failures in svnserve tests when run in parallel
+- Run tests in parallel by default on Fedora
+- Skip 'git svn branch' tests which fail intermittently
+- Re-enable grep tests on s390x
 
-* Thu Jul 16 2015 Carl George <carl.george@rackspace.com> - 2.4.6-1.ius
-- Latest upstream
+* Wed Nov 29 2017 Todd Zullinger <tmz@pobox.com> - 2.15.1-2
+- Fix debuginfo for gnome-keyring and libsecret credential helpers
 
-* Mon Jun 29 2015 Carl George <carl.george@rackspace.com> - 2.4.5-1.ius
-- Latest upstream
+* Tue Nov 28 2017 Todd Zullinger <tmz@pobox.com> - 2.15.1-1
+- Update to 2.15.1
 
-* Wed Jun 10 2015 Carl George <carl.george@rackspace.com> - 2.4.3-1.ius
-- Latest upstream
+* Tue Nov 21 2017 Todd Zullinger <tmz@pobox.com>
+- Add tcl/tk BuildRequires
+- Enable support for release candidate builds
 
-* Wed May 27 2015 Carl George <carl.george@rackspace.com> - 2.4.2-1.ius
-- Latest upstream
+* Tue Nov 07 2017 Todd Zullinger <tmz@pobox.com> - 2.15.0-2
+- Fix git-clone memory exhaustion (CVE-2017-15298)
+  Resolves: #1510455, #1510457
+- Disable cross-directory hardlinks
+- Drop ancient obsoletes for git and git-arch
+- Update summary/description of numerous subpackages
+- Fix shebang in a few places to silence rpmlint complaints
+- Fix t9020-remote-svn failure when setting PYTHON_PATH
+- Rename %%gitcoredir to %%gitexecdir; upstream uses the latter
+- Move commands which no longer require perl into git-core
+- Move filter-branch out of core, it needs perl now
+- Improve test suite coverage
 
-* Tue May 26 2015 Carl George <carl.george@rackspace.com> - 2.4.1-1.ius
-- Latest upstream
+* Mon Oct 30 2017 Todd Zullinger <tmz@pobox.com> - 2.15.0-1
+- Update to 2.15.0
 
-* Tue May 12 2015 Carl George <carl.george@rackspace.com> - 2.4.0-1.ius
-- Latest upstream
+* Mon Oct 23 2017 Todd Zullinger <tmz@pobox.com> - 2.14.3-1
+- Update to 2.14.3
 
-* Tue Apr 28 2015 Carl George <carl.george@rackspace.com> - 2.3.7-1.ius
-- Latest upstream
+* Tue Sep 26 2017 Todd Zullinger <tmz@pobox.com> - 2.14.2-2
+- Update to 2.14.2
 
-* Wed Apr 22 2015 Carl George <carl.george@rackspace.com> - 2.3.6-1.ius
-- Latest upstream
+* Thu Aug 10 2017 Todd Zullinger <tmz@pobox.com> - 2.14.1-2
+- Rebuild for rpm-4.14 bug (#1480407)
 
-* Wed Apr 01 2015 Ben Harper <ben.harper@rackspace.com> - 2.3.5-1.ius
-- Latest upstream
+* Thu Aug 10 2017 Todd Zullinger <tmz@pobox.com> - 2.14.1-1
+- Update to 2.14.1 (resolves CVE-2017-1000117)
 
-* Tue Mar 31 2015 Carl George <carl.george@rackspace.com> - 2.3.4-1.ius
-- Latest upstream
+* Tue Aug 08 2017 Iryna Shcherbina <ishcherb@redhat.com> - 2.14.0-2
+- Add a build-time dependency on python2-devel for p4
+  Resolves: #1479713
+- Skip all grep tests on s390x for now because it failes intermittently
 
-* Wed Mar 18 2015 Ben Harper <ben.harper@rackspace.com> - 2.3.3-1.ius
-- Latest upstream
+* Fri Aug 04 2017 Todd Zullinger <tmz@pobox.com> - 2.14.0-1
+- Update to 2.14.0
+- Use pcre2 library
+- git-p4: explicitly require python2
 
-* Mon Mar 09 2015 Ben Harper <ben.harper@rackspace.com> - 2.3.2-1.ius
-- Latest upstream
+* Tue Aug 01 2017 Todd Zullinger <tmz@pobox.com> - 2.13.4-1
+- Update to 2.13.4
+- Remove EL-5 and old Fedora conditionals
 
-* Wed Feb 25 2015 Carl George <carl.george@rackspace.com> - 2.3.1-1.ius
-- Latest upstream
+* Sun Jul 30 2017 Florian Weimer <fweimer@redhat.com> - 2.13.3-3
+- Rebuild with binutils fix for ppc64le (#1475636)
 
-* Fri Feb 06 2015 Carl George <carl.george@rackspace.com> - 2.3.0-1.ius
-- Latest upstream
+* Thu Jul 20 2017 Petr Stodulka <pstodulk@redhat.com> - 2.13.3-2
+- Move documentation files from all subpackages into the %%{_pkgdocdir}
+  directory, so links inside doc and man files are correct
+  Resolves: #1357438
+- Quiet a few rpmlint complaints regarding hidden files in contrib dir
+- Remove explicit libcurl requirement from git-core
 
-* Tue Jan 13 2015 Carl George <carl.george@rackspace.com> - 2.2.2-1.ius
-- Latest upstream
+* Thu Jul 13 2017 Gwyn Ciesla <limburgher@gmail.com> - 2.13.3-1
+- Update to 2.13.3
 
-* Thu Dec 18 2014 Carl George <carl.george@rackspace.com> - 2.2.1-1.ius
-- Latest upstream
+* Sun Jun 25 2017 Todd Zullinger <tmz@pobox.com> - 2.13.2-1
+- Update to 2.13.2
+- Skip grep tests which fail intermittently on s390x
 
-* Mon Dec 01 2014 Carl George <carl.george@rackspace.com> - 2.2.0-2.ius
-- Only build hg subpackage on el7+
+* Wed Jun 07 2017 Jitka Plesnikova <jplesnik@redhat.com> - 2.13.1-2
+- Perl 5.26 re-rebuild of bootstrapped packages
 
-* Fri Nov 28 2014 Carl George <carl.george@rackspace.com> - 2.2.0-1.ius
-- Latest upstream
-- Rename perl and emacs modules for consistency
+* Mon Jun 05 2017 Todd Zullinger <tmz@pobox.com> - 2.13.1-1
+- Update to 2.13.1
 
-* Mon Nov 17 2014 Ben Harper <ben.harper@rackspace.com> - 2.1.3-1.ius
-- porting from https://kojipkgs.fedoraproject.org//packages/git/2.1.0/5.fc22/src/git-2.1.0-5.fc22.src.rpm
+* Sun Jun 04 2017 Jitka Plesnikova <jplesnik@redhat.com> - 2.13.0-3
+- Perl 5.26 rebuild
+
+* Wed May 17 2017 Todd Zullinger <tmz@pobox.com> - 2.13.0-2
+- Use default, collision-detecting SHA1 implementation
+
+* Tue May 09 2017 Todd Zullinger <tmz@pobox.com> - 2.13.0-1
+- Update to 2.13.0 (resolves CVE-2017-8386)
+
+* Wed Mar 29 2017 Gwyn Ciesla <limburgher@gmail.com> - 2.12.2-1
+- Update to 2.12.2
+
+* Tue Mar 21 2017 Gwyn Ciesla <limburgher@gmail.com> - 2.12.1-1
+- Update to 2.12.1
+
+* Mon Feb 27 2017 Jon Ciesla <limburgher@gmail.com> - 2.12.0-1
+- Update to 2.12.0
+
+* Fri Feb 17 2017 Petr Stodulka <pstodulk@redhat.com> - 2.11.1-3
+- remove non-ASCII characters from description and title of packages
+- fix requiremets
+- fix spec to be compatible for other systems
+- remove deprecated credential-gnome-keyring
+
+* Fri Feb 17 2017 Todd Zullinger <tmz@pobox.com> - 2.11.1-3
+- Remove unnecessary rsync requirement from git-core
+- Move gnome-keyring credential helper from git-core to git
+- Enable libsecret credential helper
+- Run git test suite
+- Use %%{_mandir} in git/git-core file list filters
+- Fix version of emacs-git and emacs-git-el provides
+- Clean up contrib/{credential,subtree} to avoid cruft in git-core-doc
+- Fix a number of macro-in-comment warnings from rpmlint
+
+* Fri Feb 10 2017 Fedora Release Engineering <releng@fedoraproject.org> - 2.11.1-2
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_26_Mass_Rebuild
+
+* Fri Feb 03 2017 Jon Ciesla <limburgher@gmail.com> - 2.11.1-1
+- Update to 2.11.1
+
+* Wed Nov 30 2016 Jon Ciesla <limburgher@gmail.com> - 2.11.0-1
+- Update to 2.11.0
+
+* Mon Oct 31 2016 Jon Ciesla <limburgher@gmail.com> - 2.10.2-1
+- Update to 2.10.2
+
+* Tue Oct 04 2016 Jon Ciesla <limburgher@gmail.com> - 2.10.1-1
+- Update to 2.10.1
+
+* Sat Sep 03 2016 Todd Zullinger <tmz@pobox.com> - 2.10.0-1
+- Update to 2.10.0
+
+* Mon Aug 15 2016 Jon Ciesla <limburgher@gmail.com> - 2.9.3-1
+- Update to 2.9.3.
+
+* Fri Jul 15 2016 Jon Ciesla <limburgher@gmail.com> - 2.9.2-1
+- Update to 2.9.2.
+
+* Tue Jul 12 2016 Jon Ciesla <limburgher@gmail.com> - 2.9.1-1
+- Update to 2.9.1.
+
+* Tue Jun 14 2016 Jon Ciesla <limburgher@gmail.com> - 2.9.0-1
+- Update to 2.9.0.
+
+* Wed Jun 08 2016 Jon Ciesla <limburgher@gmail.com> - 2.8.4-1
+- Update to 2.8.4.
+
+* Fri May 20 2016 Jitka Plesnikova <jplesnik@redhat.com> - 2.8.3-2
+- Perl 5.24 rebuild
+
+* Thu May 19 2016 Todd Zullinger <tmz@pobox.com> - 2.8.3-1
+- Update to 2.8.3
+
+* Thu May 19 2016 Jitka Plesnikova <jplesnik@redhat.com> - 2.8.2-5
+- Perl 5.24 re-rebuild of bootstrapped packages
+
+* Wed May 18 2016 Todd Zullinger <tmz@pobox.com> - 2.8.2-4
+- Use perl(MOD::NAME) format for perl-DBD-SQLite and perl-Digest-MD5 deps
+- Define __global_ldflags on EL < 7 (#1337137)
+
+* Wed May 18 2016 Jitka Plesnikova <jplesnik@redhat.com> - 2.8.2-3
+- Perl 5.24 re-rebuild of bootstrapped packages
+
+* Sun May 15 2016 Jitka Plesnikova <jplesnik@redhat.com> - 2.8.2-2
+- Perl 5.24 rebuild
+
+* Fri Apr 29 2016 Todd Zullinger <tmz@pobox.com> - 2.8.2-1
+- Update to 2.8.2
+
+* Mon Apr 11 2016 Todd Zullinger <tmz@pobox.com> - 2.8.1-3
+- Set LDFLAGS for hardened builds (#1289728)
+
+* Wed Apr 06 2016 Paolo Bonzini <pbonzini@redhat.com> - 2.8.1-2
+- Install git-credentials-netrc (#1303358)
+
+* Tue Apr 05 2016 Jon Ciesla <limburgher@gmail.com> - 2.8.1-1
+- Update to 2.8.1.
+
+* Tue Mar 29 2016 Neal Gompa <ngompa13{%}gmail{*}com> - 2.8.0-1
+- Update to 2.8.0
+- Use license macro for COPYING
+
+* Sun Mar 27 2016 Todd Zullinger <tmz@pobox.com> - 2.7.4-2
+- Use https for URL / Source and smaller tar.xz files
+- Check upstream GPG signatures in %%prep
+
+* Tue Mar 22 2016 Konrad Scherer <Konrad.Scherer@windriver.com>
+- Workaround missing git subtree documentation in prebuilt docs (bug 1320210)
+- Only add git-cvsserver binary once if the core dir matches the bin dir as it
+  does on el5 (bug 1320210)
+
+* Tue Mar 22 2016 Todd Zullinger <tmz@pobox.com>
+- Conditionalize bash-completion pkg-config usage for EL <= 6 (bug 1320210)
+
+* Fri Mar 18 2016 David Woodhouse <dwmw2@infradead.org> - 2.7.4-1
+- Update to 2.7.4 (for CVE-2016-2315, CVE-2016-2324)
+  Resolves: #1318220
+
+* Mon Mar 14 2016 Jon Ciesla <limburgher@gmail.com> - 2.7.3-1
+- Update to 2.7.3.
+
+* Tue Feb 23 2016 Jon Ciesla <limburgher@gmail.com> - 2.7.2-1
+- Update to 2.7.2.
+
+* Sat Feb 06 2016 Jon Ciesla <limburgher@gmail.com> - 2.7.1-1
+- Update to 2.7.1.
+
+* Thu Feb 04 2016 Petr Stodulka <pstodulk@redhat.com> - 2.7.0-3
+- remove all '.gitignore' files from packages
+
+* Wed Feb 03 2016 Fedora Release Engineering <releng@fedoraproject.org> - 2.7.0-2
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_24_Mass_Rebuild
+
+* Tue Jan 05 2016 Jon Ciesla <limburgher@gmail.com> - 2.7.0-1
+- Update to 2.7.0.
+- Infinite loop patch appears obsolete.
+
+* Wed Dec 09 2015 Jon Ciesla <limburgher@gmail.com> - 2.6.4-1
+- Update to 2.6.4.
+
+* Fri Nov 27 2015 Petr Stodulka <pstodulk@redhat.com> - 2.6.3-2
+- found 2 perl scripts in git-core, move them to git package
+  (#1284688)
+
+* Fri Nov 06 2015 Jon Ciesla <limburgher@gmail.com> - 2.6.3-1
+- Update to 2.6.3.
+
+* Tue Nov 03 2015 Petr Stodulka <pstodulk@gmail.com> - 2.6.2-2
+- provides failback for the macro _pkgdocdir (#1277550)
+
+* Sat Oct 17 2015 Jon Ciesla <limburgher@gmail.com> - 2.6.2-1
+- Update to 2.6.2.
+
+* Tue Oct 06 2015 Jon Ciesla <limburgher@gmail.com> - 2.6.1-1
+- Update to 2.6.1.
+
+* Tue Sep 29 2015 Jon Ciesla <limburgher@gmail.com> - 2.6.0-1
+- Update to 2.6.0.
+
+* Fri Sep 18 2015 Jon Ciesla <limburgher@gmail.com> - 2.5.3-1
+- Update to 2.5.3.
+
+* Fri Sep 11 2015 Jon Ciesla <limburgher@gmail.com> - 2.5.2-1
+- Update to 2.5.2.
+
+* Sat Aug 29 2015 Petr Stodulka <pstodulk@redhat.com> - 2.5.1-1
+- Update to 2.5.1
+
+* Tue Jul 28 2015 Jon Ciesla <limburgher@gmail.com> - 2.5.0-1
+- Update to 2.5.0.
+
+* Thu Jul 16 2015 Petr Stodulka <pstodulk@redhat.com> - 2.4.6-1
+- New upstream release 2.4.6
+
+* Tue Jul  7 2015 Jonathan Underwood <jonathan.underwood@gmail.com> - 2.4.5-2
+- Comply with modern Emacs packaging guidelines on recent Fedora
+  No longer split out emacs-git and emacs-git-el sub-packages on recent Fedora
+  Require emacs-filesystem on recent Fedora (#1234552)
+
+* Fri Jun 26 2015 Jon Ciesla <limburgher@gmail.com> - 2.4.5-1
+- Update to 2.4.5.
+
+* Mon Jun 22 2015  Petr Stodulka <pstodulk@gmail.com> - 2.4.4-2
+- git-svn - added requires for perl-Digest-MD5 (#1218176)
+- solve troubles with infinite loop due to broken symlink (probably
+  shouldn't be problem here, but it's reproducible manually)
+  (#1204193)
+
+* Tue Jun 16 2015 Jon Ciesla <limburgher@gmail.com> - 2.4.4-1
+- Update to 2.4.4.
+
+* Wed Jun 10 2015 Jitka Plesnikova <jplesnik@redhat.com> - 2.4.3-4
+- Perl 5.22 re-rebuild of bootstrapped packages
+
+* Tue Jun 09 2015 Jitka Plesnikova <jplesnik@redhat.com> - 2.4.3-3
+- Perl 5.22 rebuild
+
+* Mon Jun 08 2015 Petr Stodulka <pstodulk@redhat.com> - 2.4.3-2
+- separate documentation files from git-core package to git-core-doc
+  including core man pages
+
+* Sat Jun 06 2015 Jon Ciesla <limburgher@gmail.com> - 2.4.3-1
+- Update to 2.4.3.
+
+* Fri Jun 05 2015 Jitka Plesnikova <jplesnik@redhat.com>
+- Perl 5.22 rebuild
+
+* Wed Jun 03 2015 Petr Stodulka <pstodulk@redhat.com> - 2.4.2-2
+- split create subpackage git-core (perl-less) from git package
+- git package requires git-core and it has same tool set as
+  before
+- relevant docs are part of git-core package too
+- removed proved and obsoletes in git for git-core
+
+* Tue May 26 2015 Jon Ciesla <limburgher@gmail.com> - 2.4.2-1
+- Update to 2.4.2.
+
+* Thu May 14 2015 Jon Ciesla <limburgher@gmail.com> - 2.4.1-1
+- Update to 2.4.1.
+
+* Fri May 01 2015 Jon Ciesla <limburgher@gmail.com> - 2.4.0-1
+- Update to 2.4.0.
+
+* Tue Apr 28 2015 Jon Ciesla <limburgher@gmail.com> - 2.3.7-1
+- Update to 2.3.7.
+
+* Wed Apr 22 2015 Jon Ciesla <limburgher@gmail.com> - 2.3.6-1
+- Update to 2.3.6.
+
+* Mon Apr 06 2015 Jon Ciesla <limburgher@gmail.com> - 2.3.5-1
+- Update to 2.3.5.
+
+* Tue Mar 24 2015 Petr Stodulka <pstodulk@redhat.com> - 2.3.4-1
+- Update to 2.3.4.
+
+* Mon Mar 16 2015 Jon Ciesla <limburgher@gmail.com> - 2.3.3-1
+- Update to 2.3.3.
+
+* Mon Mar 09 2015 Jon Ciesla <limburgher@gmail.com> - 2.3.2-1
+- Update to 2.3.2.
+
+* Fri Feb 27 2015 Jon Ciesla <limburgher@gmail.com> - 2.3.1-1
+- Update to 2.3.1.
+
+* Sat Feb 21 2015 Till Maas <opensource@till.name> - 2.3.0-2
+- Rebuilt for Fedora 23 Change
+  https://fedoraproject.org/wiki/Changes/Harden_all_packages_with_position-independent_code
+
+* Fri Feb 06 2015 Jon Ciesla <limburgher@gmail.com> - 2.3.0-1
+- Update to 2.3.0.
+
+* Tue Jan 27 2015 Ville Skyttä <ville.skytta@iki.fi> - 2.2.2-2
+- Install bash completion to %%{_datadir}/bash-completion/completions
+
+* Fri Jan 23 2015 Jon Ciesla <limburgher@gmail.com> - 2.2.2-1
+- Update to 2.2.2.
+
+* Thu Jan 08 2015 Jon Ciesla <limburgher@gmail.com> - 2.2.1-1
+- Update to 2.2.1.
+
+* Thu Dec 11 2014 Petr Stodulka <pstodulk@redhat.com> - 2.2.0-3
+- removed subpackage git-hg which is replaced by git-remote-hg from
+  separated package
+
+* Fri Nov 28 2014 Petr Stodulka <pstodulk@redhat.com> - 2.2.0-2
+- removed subpackage git-bzr which is replaced by git-remote-bzr from
+  separated package
+
+* Fri Nov 28 2014 Petr Stodulka <pstodulk@redhat.com> - 2.2.0-1
+- 2.2.0
 
 * Fri Oct 24 2014 Pierre-Yves Chibon <pingou@pingoured.fr> - 2.1.0-5
 - Rename the git.service into git@.service fixing

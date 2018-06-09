@@ -1,14 +1,12 @@
 language: bash
 services: docker
-env:
-  - TEST_SUITE=docker-gc
-  - TEST_SUITE=ferm
-  - TEST_SUITE=git
-  - TEST_SUITE=mosh
 
 script:
   - gpg --keyserver ha.pool.sks-keyservers.net --recv-key 13F26F82E955B8B8CE469054F29CCEBC83FD4525
-  - ./manage build
+  - ./manage build docker-gc
+  - ./manage build ferm
+  - ./manage build git
+  - ./manage build mosh
 
 notifications:
   email:

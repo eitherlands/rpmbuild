@@ -1,5 +1,3 @@
-%global _sourcedir %{_topdir}/SOURCES/ferm
-
 Summary:        For Easy Rule Making
 Name:           ferm
 Version:        2.4.1

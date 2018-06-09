@@ -1,103 +1,17 @@
 #!/usr/bin/env bash
 # @description build RPM
-# @import lang/required
-# @import console/die
-# @import console/info
-# @import console/warn
-# @import console/error
-# @import lang/truth
 # @import lang/exists
-
-indent () {
-    local line
-
-    while read -r line
-    do
-        echo "......... ${line}"
-    done
-}
+# @import rpmbuild/rpmbuild
 
 main ()
 {
     verbose true
     strict true
 
-    ARCH="$(uname -p)"
-
-    if _ truth "$DOCKER"
+    if _ exists selinuxenabled
     then
-        _ required "$1" || _ die 'Nothing to do'
-
-        name="$1"
-
-        SPECS="${MANAGE_REPOSITORY}/SPECS"
-        SRPMS="${MANAGE_REPOSITORY}/SRPMS"
-        RPMS="${MANAGE_REPOSITORY}/RPMS"
-
-        (
-            rpmbuild -bs --target "${ARCH}" "${SPECS}/${name}.spec"
-            yum-builddep -y "${SPECS}/${name}.spec"
-            rpmbuild -bb --target "${ARCH}" "${SPECS}/${name}.spec"
-
-            [ -d "${SRPMS}" ] && cp -rf "${SRPMS}" /artifacts/
-            [ -d "${RPMS}"  ] && cp -rf "${RPMS}" /artifacts/
-        ) | indent
-
-    else
-        local queue=($@)
-
-        if _ required "${TEST_SUITE}"
-        then
-            queue=(${TEST_SUITE})
-        fi
-
-        for verify in "${queue[@]}"
-        do
-            [ -f "${MANAGE_REPOSITORY}/SPECS/${verify}.spec" ] || _ die "spec ${verify} does not exist"
-        done
-
-        docker build -t escapace/rpmbuild:latest \
-            -f "${MANAGE_REPOSITORY}/images/centos/Dockerfile" \
-            "${MANAGE_REPOSITORY}" #> /dev/null
-
-        for name in "${queue[@]}"
-        do
-            local data="escapace-rpmbuild-data-${name}"
-
-            if ! docker inspect "${data}" > /dev/null 2>&1; then
-                docker create -v /artifacts \
-                    --name "${data}" \
-                    --entrypoint "/bin/true" \
-                    escapace/rpmbuild:latest > /dev/null
-            fi
-
-            _ info "Processing "${name}" ..."
-
-            docker run --volumes-from "${data}" \
-                escapace/rpmbuild:latest build "${name}"
-
-            if _ exists selinuxenabled
-            then
-                selinuxenabled && chcon -Rt svirt_sandbox_file_t "${MANAGE_REPOSITORY}"
-            fi
-
-            docker run --rm --volumes-from "${data}" \
-                -v "${MANAGE_REPOSITORY}":/host \
-                escapace/rpmbuild:latest _copy
-        done
+        selinuxenabled && chcon -Rt svirt_sandbox_file_t "${MANAGE_REPOSITORY}"
     fi
-}
 
-onExit ()
-{
-    if (( $1 == 0 ))
-    then
-        if _ truth "$DOCKER"; then
-            true
-        else
-            _ warn "Exiting."
-        fi
-    else
-        _ error "An error with exit code \"$1\" has occured."
-    fi
+    _ rpmbuild "$1"
 }

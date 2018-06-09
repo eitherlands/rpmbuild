@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# @import lang/required
+# @import console/info
+# @import console/error
+# @import lang/truth
+# @import github.com/escapace/stack-tools/docker/dockerBuild
+
+rpmbuild () {
+    local name="$1"
+    local configuration="${2:-epel-7-x86_64}"
+    local scope="${DOCKER_SCOPE:-internal}"
+    local main="${scope}/rpmbuild"
+    local data="${scope}-rpmbuild-cache"
+
+    if required "${RPMBUILD_PACKAGE}"
+    then
+        name="${RPMBUILD_PACKAGE}"
+    fi
+
+    required "$name" || {
+        error 'Nothing to do'
+
+        return 1
+    }
+
+    local SOURCES="${MANAGE_REPOSITORY}/SOURCES"
+    local SPECS="${MANAGE_REPOSITORY}/SPECS"
+    local SRPMS="${MANAGE_REPOSITORY}/SRPMS"
+    local RPMS="${MANAGE_REPOSITORY}/RPMS"
+
+    if truth "$DOCKER"
+    then
+        [[ -d "/tmp/repository/SOURCES/${name}" ]] || {
+            error "Cannot access ${name}: No such file or directory"
+
+            return 1
+        }
+
+        [[ -f "/tmp/repository/SPECS/${name}.spec" ]] || {
+            error "Cannot access ${name}: No such file or directory"
+
+            return 1
+        }
+
+        rm -rf "${MANAGE_REPOSITORY}"/{BUILD,RPMS,SPECS,SRPMS,SOURCES}
+        mkdir -p "${MANAGE_REPOSITORY}"/{BUILD,RPMS,SPECS,SRPMS}
+        cp -rf "/tmp/repository/SOURCES/${name}" "${SOURCES}"
+        cp -rf "/tmp/repository/SPECS/${name}.spec" "${SPECS}/${name}.spec"
+
+        mock -r "${configuration}" \
+            --buildsrpm \
+            --spec="${SPECS}/${name}.spec" \
+            --sources="${SOURCES}" \
+            --resultdir="${SRPMS}" \
+            --no-cleanup-after
+
+        mock -r "${configuration}" \
+            --rebuild "$(find "${SRPMS}" -type f -name "${name}*.src.rpm")" \
+            --resultdir="${RPMS}"
+
+        sudo find "${RPMS}" -type f -name "${name}*.rpm" -not -name '*.src.rpm' -exec chown "${HOST_UID}:${HOST_GID}" {} \;
+        sudo find "${RPMS}" -type f -name "${name}*.rpm" -not -name '*.src.rpm' -exec cp -f {} /tmp/repository/RPMS \;
+    else
+        [ -f "${SPECS}/${name}.spec" ] || {
+            error "spec ${name} does not exist"
+
+            return 1
+        }
+
+        DOCKER_BUILD_OPTIONS="--rm" dockerBuild rpmbuild
+
+        info "Processing \"${name}\" ..."
+
+        if ! docker inspect "${data}" > /dev/null 2>&1; then
+            docker create -v /home/centos/cache \
+                --name "${data}" \
+                --entrypoint "/bin/true" \
+                "${main}"
+        fi
+
+        docker run -it --privileged \
+            --volumes-from "${data}" \
+            -v "${MANAGE_REPOSITORY}":/tmp/repository \
+            -e HOST_UID="$(id -u)" \
+            -e HOST_GID="$(id -g)" \
+            "${main}" build "${name}"
+    fi
+}

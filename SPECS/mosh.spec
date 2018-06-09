@@ -1,5 +1,3 @@
-%global _sourcedir %{_topdir}/SOURCES/mosh
-
 Name:		mosh
 Version:	1.3.2
 Release:	1%{?dist}
