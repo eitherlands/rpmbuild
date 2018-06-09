@@ -55,11 +55,14 @@ rpmbuild () {
             --no-cleanup-after
 
         mock -r "${configuration}" \
-            --rebuild "$(find "${SRPMS}" -type f -name "${name}*.src.rpm")" \
+            --rebuild "$(find "${SRPMS}" -type f -name "*.src.rpm")" \
             --resultdir="${RPMS}"
 
-        sudo find "${RPMS}" -type f -name "${name}*.rpm" -not -name '*.src.rpm' -exec chown "${HOST_UID}:${HOST_GID}" {} \;
-        sudo find "${RPMS}" -type f -name "${name}*.rpm" -not -name '*.src.rpm' -exec cp -f {} /tmp/repository/RPMS \;
+        sudo find "${RPMS}" -type f -name "*.rpm" -not -name '*.src.rpm' -exec chown "${HOST_UID}:${HOST_GID}" {} \;
+        sudo find "${RPMS}" -type f -name "*.rpm" -not -name '*.src.rpm' -exec cp -f {} /tmp/repository/RPMS \;
+
+        sudo find "${SRPMS}" -type f -name "*.src.rpm" -exec chown "${HOST_UID}:${HOST_GID}" {} \;
+        sudo find "${SRPMS}" -type f -name "*.src.rpm" -exec cp -f {} /tmp/repository/SRPMS \;
     else
         [ -f "${SPECS}/${name}.spec" ] || {
             error "spec ${name} does not exist"

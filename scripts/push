@@ -20,7 +20,7 @@ main ()
     while read -d '' -r dir
     do
         sudo chown "${USER}:${GROUP}" "${dir}" >& /dev/null || true
-    done < <(find "${MANAGE_REPOSITORY}/RPMS" -type d -print0 2> /dev/null)
+    done < <(find "${MANAGE_REPOSITORY}/SRPMS" "${MANAGE_REPOSITORY}/RPMS" -type d -print0 2> /dev/null)
 
     while read -d '' -r file
     do
@@ -29,7 +29,7 @@ main ()
             files+=("${file}")
             sudo chown "${USER}:${GROUP}" "${file}" >& /dev/null || true
         fi
-    done < <(find "${MANAGE_REPOSITORY}/RPMS" -type f -print0 2> /dev/null)
+    done < <(find "${MANAGE_REPOSITORY}/SRPMS" "${MANAGE_REPOSITORY}/RPMS" -type f -print0 2> /dev/null)
 
     rpmsign --delsign "${files[@]}" >& /dev/null || _ die "Failed to delete signature"
     rpmsign --addsign --key-id 0xF29CCEBC83FD4525 "${files[@]}"
