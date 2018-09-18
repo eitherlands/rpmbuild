@@ -2,7 +2,7 @@ language: bash
 services: docker
 
 script:
-  - gpg --keyserver ha.pool.sks-keyservers.net --recv-key 13F26F82E955B8B8CE469054F29CCEBC83FD4525
+  - ./manage trust-escapace
   - ./manage build docker-gc
   - ./manage build ferm
   - ./manage build git

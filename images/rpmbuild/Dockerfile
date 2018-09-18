@@ -38,6 +38,6 @@ COPY ./scripts /home/centos/rpmbuild/scripts
 RUN chown centos:centos -R /home/centos && install -g mock -m 2775 -d /home/centos/cache/mock
 
 USER centos
-RUN gpg --keyserver ha.pool.sks-keyservers.net --recv-key 13F26F82E955B8B8CE469054F29CCEBC83FD4525
+RUN /home/centos/rpmbuild/manage/manage trust-escapace
 ENTRYPOINT ["/home/centos/rpmbuild/manage/manage"]
 CMD ["build"]
