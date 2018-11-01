@@ -2,12 +2,11 @@ language: bash
 services: docker
 before_script: ./manage trust-escapace
 script: ./manage build
-matrix:
-  include:
-    env: TEST_SUITE=docker-gc
-    env: TEST_SUITE=ferm
-    env: TEST_SUITE=git
-    env: TEST_SUITE=mosh
+env:
+- TEST_SUITE=docker-gc
+- TEST_SUITE=ferm
+- TEST_SUITE=git
+- TEST_SUITE=mosh
 notifications:
   email: false
   slack:
