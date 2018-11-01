@@ -3,7 +3,7 @@
 # @import console/info
 # @import console/error
 # @import lang/truth
-# @import github.com/escapace/stack-tools/docker/dockerBuild
+# @import github.com/escapace/stack-tools docker/dockerBuild
 
 rpmbuild () {
     local name="$1"

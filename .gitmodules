@@ -1,3 +1,0 @@
-[submodule "vendor/manage"]
-	path = vendor/manage
-	url = https://github.com/escapace/manage.git

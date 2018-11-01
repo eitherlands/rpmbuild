@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # @description build RPM
 # @import lang/exists
+# @import lang/first
+# @import console/die
 # @import rpmbuild/rpmbuild
 
 main ()
@@ -8,10 +10,12 @@ main ()
     verbose true
     strict true
 
+    TEST_SUITE="$(_ first "${TEST_SUITE}" "$1")" || _ die "No test suite chosen"
+
     if _ exists selinuxenabled
     then
         selinuxenabled && chcon -Rt svirt_sandbox_file_t "${MANAGE_REPOSITORY}"
     fi
 
-    _ rpmbuild "$1"
+    _ rpmbuild "${TEST_SUITE}"
 }

@@ -31,13 +31,13 @@ WORKDIR /home/centos/rpmbuild
 VOLUME /tmp/repository
 VOLUME /home/centos/cache
 
-COPY ./vendor/manage /home/centos/rpmbuild/manage
+COPY ./manage /home/centos/rpmbuild/manage
 COPY ./.manage.yml /home/centos/rpmbuild/.manage.yml
 COPY ./scripts /home/centos/rpmbuild/scripts
 
 RUN chown centos:centos -R /home/centos && install -g mock -m 2775 -d /home/centos/cache/mock
 
 USER centos
-RUN /home/centos/rpmbuild/manage/manage trust-escapace
-ENTRYPOINT ["/home/centos/rpmbuild/manage/manage"]
+RUN /home/centos/rpmbuild/manage trust-escapace
+ENTRYPOINT ["/home/centos/rpmbuild/manage"]
 CMD ["build"]
