@@ -30,7 +30,7 @@ else
     exit 1
 fi
 
-MANAGE_VERSION="v3.1.0"
+MANAGE_VERSION="v3.1.1"
 
 MANAGE_IS_CI () {
     # Returns 0 if the current environment
