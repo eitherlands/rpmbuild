@@ -3,6 +3,7 @@ services: docker
 before_script: ./manage trust-escapace
 script: ./manage build
 env:
+- TEST_SUITE=zsh
 - TEST_SUITE=docker-gc
 - TEST_SUITE=ferm
 - TEST_SUITE=git

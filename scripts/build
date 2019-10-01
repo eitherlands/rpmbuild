@@ -14,7 +14,7 @@ main ()
 
     if _ exists selinuxenabled
     then
-        selinuxenabled && chcon -Rt svirt_sandbox_file_t "${MANAGE_REPOSITORY}"
+        selinuxenabled && sudo chcon -Rt svirt_sandbox_file_t "${MANAGE_REPOSITORY}"
     fi
 
     _ rpmbuild "${TEST_SUITE}"

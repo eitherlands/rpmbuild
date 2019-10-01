@@ -15,7 +15,7 @@ main ()
 
     local files=()
 
-    [[ -f "${HOME}/.rpmmacros" ]] || _ die "${HOME}/.rpmmacros: No such file or directory"
+    # [[ -f "${HOME}/.rpmmacros" ]] || _ die "${HOME}/.rpmmacros: No such file or directory"
 
     while read -d '' -r dir
     do

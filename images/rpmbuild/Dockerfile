@@ -1,7 +1,7 @@
 FROM centos:7
 
 ENV DOCKER=true
-RUN yum -y --setopt="tsflags=nodocs" install epel-release && \
+RUN yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm && \
     yum -y --setopt="tsflags=nodocs" upgrade && \
     yum -y --setopt="tsflags=nodocs" install bc \
                                              coreutils \
@@ -26,6 +26,7 @@ RUN adduser -u 1000 -G mock -U -m centos && \
     chmod g+w /etc/mock/*.cfg && \
     echo "config_opts['use_nspawn'] = False" >> /etc/mock/site-defaults.cfg && \
     echo "config_opts['cache_topdir'] = '/home/centos/cache/mock'" >> /etc/mock/site-defaults.cfg
+
 
 WORKDIR /home/centos/rpmbuild
 VOLUME /tmp/repository
