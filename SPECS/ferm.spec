@@ -1,20 +1,23 @@
 Summary:        For Easy Rule Making
 Name:           ferm
-Version:        2.4.1
-Release:        2%{?dist}
+Version:        2.5.1
+Release:        1%{?dist}
 Group:          Applications/System
 License:        GPLv2+
 Source:         http://ferm.foo-projects.org/download/2.2/%{name}-%{version}.tar.gz
-BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 URL:            http://ferm.foo-projects.org/
 BuildArchitectures: noarch
 
+BuildRequires:          perl-generators
+BuildRequires:          perl(Data::Dumper)
+BuildRequires:          perl(File::Spec)
 BuildRequires:          systemd
+BuildRequires:          /usr/bin/pod2text
+BuildRequires:          /usr/bin/pod2man
+BuildRequires:          /usr/bin/pod2html
 Requires(post):         systemd
 Requires(preun):        systemd
 Requires(postun):       systemd
-
-%{!?_pkgdocdir: %global _pkgdocdir %{_docdir}/%{name}-%{version}}
 
 %description
 Ferm is a tool to maintain complex firewalls, without having the
@@ -30,8 +33,6 @@ levels and lists.
 %build
 
 %install
-rm -Rf $RPM_BUILD_ROOT
-
 make install PREFIX=$RPM_BUILD_ROOT%{_prefix} DOCDIR=$RPM_BUILD_ROOT%{_pkgdocdir} MANDIR=$RPM_BUILD_ROOT%{_mandir}/man1
 
 %clean
@@ -47,8 +48,10 @@ rm -rf $RPM_BUILD_ROOT
 %systemd_postun
 
 %files
-%defattr(-,root,root,-)
-%doc AUTHORS COPYING README.rst TODO NEWS examples/
+# %doc AUTHORS README TODO NEWS examples/
+%{_pkgdocdir}
+%exclude %{_pkgdocdir}/COPYING
+%license COPYING
 %{_mandir}/man1/*
 %{_unitdir}/%{name}.service
 %{_sbindir}/import-ferm

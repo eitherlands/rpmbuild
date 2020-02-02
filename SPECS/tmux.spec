@@ -1,8 +1,8 @@
 %global _hardened_build 1
 
 Name:           tmux
-Version:        2.9a
-Release:        2%{?dist}
+Version:        3.0a
+Release:        3%{?dist}
 Summary:        A terminal multiplexer
 
 # Most of the source is ISC licensed; some of the files in compat/ are 2 and
@@ -57,7 +57,7 @@ if [ "$1" = 0 ] && [ -f %{_sysconfdir}/shells ] ; then
 fi
 
 %files
-%doc CHANGES TODO
+%doc CHANGES
 %{_bindir}/tmux
 %{_mandir}/man1/tmux.1.*
 %{_datadir}/bash-completion/completions/tmux
