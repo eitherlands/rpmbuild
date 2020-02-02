@@ -10,12 +10,13 @@ main ()
     verbose true
     strict true
 
-    TEST_SUITE="$(_ first "${TEST_SUITE}" "$1")" || _ die "No test suite chosen"
-
     if _ exists selinuxenabled
     then
         selinuxenabled && sudo chcon -Rt svirt_sandbox_file_t "${MANAGE_REPOSITORY}"
     fi
 
-    _ rpmbuild "${TEST_SUITE}"
+    for spec in "$@"
+    do
+        _ rpmbuild "${spec}"
+    done
 }

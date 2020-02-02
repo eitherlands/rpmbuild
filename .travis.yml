@@ -1,16 +1,17 @@
 language: bash
 services: docker
 before_script: ./manage trust-escapace
-script: ./manage build
-env:
-- TEST_SUITE=tmux
-- TEST_SUITE=docker-gc
-- TEST_SUITE=ferm
-- TEST_SUITE=git
-- TEST_SUITE=mosh
-notifications:
-  email: false
-  slack:
-    on_success: change
-    on_failure: always
-    secure: H4MhPx1ttieDqYfg/l+LVK6dKia04RP2pe9KCg6oxio2UfElb/7es2da5akQVWg20l0CfRr68UAWFu8tBHOZc0Zg0ODO01/0SePwMmnjKDPug9jdHC1iUPPn1OHSS3Hktm04ed3c9QMLECSuVoTxt7BKaoH2p+8HrFqdO2FtAynPAb2Q9fO3X8pd4rQfTIhxkgIEjPEVoLT0Ok5mCTtKqX9mpFl+rQSa27+mVxmlkUjAfBpkBZLv+Jp7gZJfkpCaG51ZTahia5RE/ihGB6BRgw1KTr/mzd0chwj3b6ZVBg73UWs9e8CW1LqkW+lqxYQ6hyZJda2BqE387O+cWdD2QtdNPj1+Woey6dcSzeryH1z3942iIXFf6CWLn176lil9dql8jR8YkDCl3TNcDAgf2S+wdk9H1V3wyWrXLBMDWXz8jBjvpodr1pRUywDx9hWza9pwiudWCui/k42QtH/dl0AFy8nMd1ciT/tLhII2oMQ1ubXR6fyfD1WYSg327eyIdFsF5cclQOJyc2Zlz8YuYNm9TWKMN5E77lMmM7rIisj5I9j7vIzuLBsxz04HEv8rdeIeYVU/2i0uGLYUPf6aLe7HzKuRjjgB4I1k2nmJh2fm+aqJM6jlVBh5CDGZVZMvDjdEsFsPDuSr2arPF0nwxJ5A8ER/Z6RiyTc6f0Ugfbo=
+jobs:
+  include:
+    - script: ./manage build tmux
+      name: "tmux"
+    - script: ./manage build ferm
+      name: "ferm"
+    - script: ./manage build libpsl lua-psl
+      name: "lua-psl"
+    - script: ./manage build libuv knot-resolver
+      name: "knot-resolver"
+    - script: ./manage build lua-http
+      name: "lua-https"
+    - script: ./manage build zsh
+      name: "zsh"
