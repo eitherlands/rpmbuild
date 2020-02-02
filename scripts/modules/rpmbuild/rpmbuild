@@ -7,7 +7,7 @@
 
 rpmbuild () {
     local name="$1"
-    local configuration="${2:-epel-7-x86_64}"
+    local configuration="${2:-epel-8-x86_64}"
     local scope="${DOCKER_SCOPE:-internal}"
     local main="${scope}/rpmbuild"
     local data="${scope}-rpmbuild-cache"
@@ -47,14 +47,38 @@ rpmbuild () {
         cp -rf "/tmp/repository/SOURCES/${name}" "${SOURCES}"
         cp -rf "/tmp/repository/SPECS/${name}.spec" "${SPECS}/${name}.spec"
 
+        _ info "MOCK init"
+        mock -r "${configuration}" --dnf --init
+        
+        _ info "MOCK dependencies"
+
+        if [[ "${name}" == "knot-resolver" ]]
+        then
+            mock -r "${configuration}" --install "/tmp/repository/RPMS/libuv-1.34.1-1.el8.x86_64.rpm"
+            mock -r "${configuration}" --install "/tmp/repository/RPMS/libuv-devel-1.34.1-1.el8.x86_64.rpm"
+        fi
+
+        if [[ "${name}" == "lua-psl" ]]
+        then
+            mock -r "${configuration}" --install "/tmp/repository/RPMS/libpsl-0.21.0-2.el8.x86_64.rpm"
+            mock -r "${configuration}" --install "/tmp/repository/RPMS/libpsl-devel-0.21.0-2.el8.x86_64.rpm"
+        fi
+
+        _ info "MOCK SRPM"
+
         mock -r "${configuration}" \
+            --no-clean \
             --buildsrpm \
             --spec="${SPECS}/${name}.spec" \
             --sources="${SOURCES}" \
             --resultdir="${SRPMS}" \
             --no-cleanup-after
+            
+        _ info "MOCK RPM"
 
         mock -r "${configuration}" \
+            --no-clean \
+            --no-cleanup-after \
             --rebuild "$(find "${SRPMS}" -type f -name "*.src.rpm")" \
             --resultdir="${RPMS}"
 

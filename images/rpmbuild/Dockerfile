@@ -1,9 +1,9 @@
-FROM centos:7
+FROM centos:8
 
 ENV DOCKER=true
-RUN yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm && \
+RUN yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm && \
     yum -y --setopt="tsflags=nodocs" upgrade && \
-    yum -y --setopt="tsflags=nodocs" install bc \
+    yum -y --setopt="tsflags=nodocs" install --allowerasing bc \
                                              coreutils \
                                              epel-release \
                                              expect \

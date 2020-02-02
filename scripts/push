@@ -34,5 +34,5 @@ main ()
     rpmsign --delsign "${files[@]}" >& /dev/null || _ die "Failed to delete signature"
     rpmsign --addsign --key-id 0xF29CCEBC83FD4525 "${files[@]}"
 
-    package_cloud push escapace/stack/el/7 "${files[@]}"
+    package_cloud push escapace/stack/el/8 "${files[@]}"
 }
