@@ -8,7 +8,7 @@
 
 Name:           knot-resolver
 Version:        %{VERSION}
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Caching full DNS Resolver
 
 License:        GPLv3
@@ -51,16 +51,16 @@ BuildRequires:  pkgconfig(luajit) >= 2.0
 Requires:       systemd
 Requires(post): systemd
 
-# Distro-dependent dependencies
-%if 0%{?rhel}
-BuildRequires:  lmdb-devel
-# Lua 5.1 version of the libraries have different package names
-Requires:       lua-basexx
-Requires:       lua-psl
-Requires:       lua-http
-Requires(pre):  shadow-utils
-%endif
-%if 0%{?fedora}
+# # Distro-dependent dependencies
+# %if 0%{?rhel}
+# BuildRequires:  lmdb-devel
+# # Lua 5.1 version of the libraries have different package names
+# Requires:       lua-basexx
+# Requires:       lua-psl
+# Requires:       lua-http
+# Requires(pre):  shadow-utils
+# %endif
+# %if 0%{?fedora}
 BuildRequires:  pkgconfig(lmdb)
 BuildRequires:  python3-sphinx
 Requires:       lua5.1-basexx
@@ -68,7 +68,7 @@ Requires:       lua5.1-cqueues
 Requires:       lua5.1-http
 Recommends:     lua5.1-psl
 Requires(pre):  shadow-utils
-%endif
+# %endif
 
 # we do not build HTTP module on SuSE so the build requires is not needed
 %if "x%{?suse_version}" == "x"
@@ -122,13 +122,13 @@ Documentation for Knot Resolver
 %package module-http
 Summary:        HTTP/2 module for Knot Resolver
 Requires:       %{name} = %{version}-%{release}
-%if 0%{?fedora}
+# %if 0%{?fedora}
 Requires:       lua5.1-http
 Requires:       lua5.1-mmdb
-%else
-Requires:       lua-http
-Requires:       lua-mmdb
-%endif
+# %else
+# Requires:       lua-http
+# Requires:       lua-mmdb
+# %endif
 
 %description module-http
 HTTP/2 module for Knot Resolver has multiple uses. It enables use of
