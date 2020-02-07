@@ -12,6 +12,12 @@ jobs:
     - script: ./manage build libuv knot-resolver
       name: "knot-resolver"
     - script: ./manage build lua-http
-      name: "lua-https"
+      name: "lua-http"
+    - script: ./manage build lua-lpeg
+      name: "lua-lpeg"
+    - script: ./manage build lua-lpeg-patterns
+      name: "lua-lpeg-patterns"
+    - script: ./manage build lua-filesystem
+      name: "lua-filesystem"
     - script: ./manage build zsh
       name: "zsh"
